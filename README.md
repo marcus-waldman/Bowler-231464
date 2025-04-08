@@ -1,8 +1,8 @@
-**Project Name**: P24024Fang  
-**PI**: Nancy Fang  
-**Analyst**: Grace Bosma, Mary Sammel  
-**CIDA drive Location**: Projects/P24024Fang  
-**GitHub Location**: CIDA-CSPH/P24024Fang  
+**Project Name**: Bowler 231464  
+**PI**: Bowler  
+**Analyst**: Marcus W., Christian S.
+**One drive Location**: Bowler, Fara - March 2023_FB BH SH/  
+**GitHub Location**: marcus-waldman/Bowler-231464  
 
 Details about the folders:
 
