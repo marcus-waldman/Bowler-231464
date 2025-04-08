@@ -4,7 +4,6 @@
 
 # Session Data files
 .RData
-.RDataTmp
 
 # User-specific files
 .Ruserdata
@@ -20,6 +19,8 @@
 
 # RStudio files
 .Rproj.user/
+.Rproj
+
 
 # produced vignettes
 vignettes/*.html
@@ -29,21 +30,33 @@ vignettes/*.pdf
 .httr-oauth
 
 # knitr and R markdown default cache directories
-*_cache/
+/*_cache/
 /cache/
 
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
 
-# R Environment Variables
-.Renviron
+# R Data files
+*.RData
+*.rda
+*.rdata
+*.rda
 
-# pkgdown site
-docs/
+# Text files
+*.csv
+*.txt
+*.dat
 
-# translation temp files
-po/*~
+# Excel
+*.xls*
 
-# RStudio Connect folder
-rsconnect/
+# SAS
+*.sas7bdat
+*.xport
+
+# Access
+*.mdb
+DataRaw/*
+DataProcessed/*
+!*/ReadMe.md
