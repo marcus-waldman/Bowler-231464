@@ -14,7 +14,6 @@ onedrive_root = "C:/Users/waldmanm/The University of Colorado Denver/"
 setwd(file.path(onedrive_root, "Bowler, Fara - March 2023_FB BH SH"))
 dict = readxl::read_excel(path = file.path(getwd(), "Data/Data Dictionary/Dictionary - Custom Data Extract - 20240406.xlsx"))
 
-
 # Summary of skill count by round 
 sheet1 = dict %>% dplyr::filter(type == "Skills") %>% 
   dplyr::group_by(corresponding_rq, round) %>% dplyr::reframe(n_vars = n()) %>% 
