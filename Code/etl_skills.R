@@ -18,11 +18,13 @@ source(file.path(github_wd, "Code", "utils", "utils.R"))
 dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
 
 # Load in the analytic data
-raw = readxl::read_xlsx(
-  path = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.xlsx"), 
-  sheet = "Data", 
-  range = "B7:CQH149"
-)
+# raw = readxl::read_xlsx(
+#   path = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.xlsx"), 
+#   sheet = "Data", 
+#   range = "B7:CQH149"
+# )
+# write_rds(raw, file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
+raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
 
 # Extract relevant columns and rename
 extracted_cols =  with(dict, col_id[!is.na(var)]) %>% sort()
@@ -102,8 +104,48 @@ counts_df = essential_responses %>%
   dplyr::left_join(competence_responses %>% dplyr::select(-(rq:skill)), by = dplyr::join_by(varshort,round)) %>% 
   dplyr::left_join(environment_responses %>% dplyr::select(-(rq:skill)), by = dplyr::join_by(varshort, round))
 
-writexl::write_xlsx(
-  counts_df, 
-  path = file.path(onedrive_wd, "Data", "Data Dictionary", "Response Counts - Custom Data Extract - 20240406.xlsx")
-)
+
+
+
+# Look at response by individual  (just essential)
+items_agree_ro1 = counts_df %>% dplyr::filter(round == 1) %>% dplyr::select(category:varshort,pct_Yes.x) %>% 
+  dplyr::arrange(-pct_Yes.x)
+
+tmp = dat %>% dplyr::select(participant,email,dplyr::starts_with("progress"), dplyr::ends_with("_essential"))
+names(tmp) = stringr::str_remove_all(names(tmp), "_essential")
+
+items_keep = c(paste0(items_agree_ro1$varshort,"_ro1"), paste0(items_agree_ro1$varshort,"_ro2"), paste0(items_agree_ro1$varshort,"_ro3"))
+items_keep = sort(items_keep)
+
+tmp = tmp %>% dplyr::select(participant:progress_ro3, dplyr::any_of(items_keep)) %>% dplyr::arrange(desc(progress_ro1), desc(progress_ro2), desc(progress_ro3)) 
+
+
+tmp_list = lapply(1:nrow(tmp), function(i){
+  
+  df_i = tmp %>% dplyr::select(-starts_with("progress_")) %>% dplyr::slice(i) %>% tidyr::pivot_longer(skill_aic_1_ro1:skill_ue_3_ro3, names_to = "var") %>% 
+    dplyr::mutate(ro = NA, 
+                  ro = ifelse(endsWith(var,"1"), 1, ro), 
+                  ro = ifelse(endsWith(var,"2"), 2, ro), 
+                  ro = ifelse(endsWith(var,"3"), 3, ro)) %>% 
+    dplyr::mutate(varshort = var %>% 
+                    stringr::str_remove_all(pattern = "_ro1") %>% 
+                    stringr::str_remove_all(pattern = "_ro2") %>% 
+                    stringr::str_remove_all(pattern = "_ro3")
+    ) %>% 
+    dplyr::select(-var) %>% 
+    tidyr::pivot_wider(names_from = "ro", values_from = "value", names_prefix = "essential_ro") %>% 
+    dplyr::arrange(varshort) %>% 
+    dplyr::left_join(tmp %>% dplyr::select(email, starts_with("progress")), by = "email") %>% 
+    dplyr::relocate(participant:varshort, progress_ro1, essential_ro1, progress_ro2, essential_ro2, progress_ro3, essential_ro3) %>% 
+    dplyr::left_join(counts_df %>% dplyr::filter(round==1) %>% dplyr::select(varshort,category,skill, pct_Yes.x) %>% dplyr::rename(pct_Yes_ro1 = pct_Yes.x), b = "varshort") %>% 
+    dplyr::select(varshort,participant:email,category,skill,pct_Yes_ro1,progress_ro1:essential_ro3)
+  
+  return(df_i)
+  
+})
+
+
+names(tmp_list)  = tmp$participant
+
+#write.csv(tmp_list[[4]], file =  file.path(onedrive_wd, "Data", "Data Dictionary","Case Study of Abigail Barron.csv"))
 

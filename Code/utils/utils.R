@@ -108,6 +108,9 @@ construct_data_dictionary<-function(onedrive_wd){
                   var = ifelse(type=="Key" & str_detect(full_stem, "Full Name"), "participant", var)
     )
   
+  # Add progress variable
+  new_dict = new_dict %>% 
+    dplyr::mutate(var = ifelse(type=="Progress", paste0("progress_ro",round), var))
 
   return(new_dict %>% dplyr::arrange(col_id))
 }
