@@ -60,3 +60,6 @@ vignettes/*.pdf
 DataRaw/*
 DataProcessed/*
 !*/ReadMe.md
+
+# Mac
+*.ds
