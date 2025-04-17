@@ -7,12 +7,13 @@ library(tidyverse)
 library(readxl)
 library(writexl)
 
-root_wd = "C:/Users/waldmanm"
-onedrive_wd = file.path(root_wd, "The University of Colorado Denver/Bowler, Fara - March 2023_FB BH SH/")
-github_wd = file.path(root_wd, "git-repositories/Bowler-231464")
+root_wd = "C:/Users/sarabiac"
+onedrive_wd = file.path(root_wd, "OneDrive - The University of Colorado Denver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
+github_wd = file.path(root_wd, "OneDrive - The University of Colorado Denver/College of Nursing/Repos/Windows Repo/Bowler-231464")
 
 source(file.path(github_wd, "Code", "utils", "utils.R"))
 
+setwd(github_wd)
 
 # Construct data dictionary
 dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
