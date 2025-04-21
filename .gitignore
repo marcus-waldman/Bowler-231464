@@ -62,4 +62,4 @@ DataProcessed/*
 !*/ReadMe.md
 
 # Mac
-*.DS_Store
+.DS_Store
