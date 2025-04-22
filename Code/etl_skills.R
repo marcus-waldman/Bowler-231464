@@ -26,6 +26,7 @@ source(file.path(github_wd, "Code", "utils", "utils.R"))
 
 # Construct data dictionary
 dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
+dict %>% dplyr::filter(skill_origin %in% c("Omitted Nu Skills","Original 166", "Respondant Provided"), round == 1, corresponding_rq == "Essential") %>% dplyr::group_by(skill_origin) %>% dplyr::reframe(n = n()) 
 
 # Load in the analytic data
 # raw = readxl::read_xlsx(

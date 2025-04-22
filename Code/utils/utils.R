@@ -7,6 +7,7 @@ construct_data_dictionary<-function(onedrive_wd){
   library(tidyverse)
   library(readxl)
   library(writexl)
+  library(raster)
   
   raw <- read_xlsx(path =file.path(onedrive_wd,'Data','Data Dictionary','Dictionary - Custom Data Extract - 20240406.xlsx'))
   
@@ -35,8 +36,79 @@ construct_data_dictionary<-function(onedrive_wd){
   # Total number of skill categories, excluding those "not include" and excluding participant generated
   # Fix misspelling of category1
   new_dict$category1[new_dict$category1=="Fluid, Electrolye, and Acid-Base Balance"] = "Fluid, Electrolyte, and Acid-Base Balance"
+  new_dict = new_dict %>% 
+    dplyr::mutate(category1 = recode(category1, 
+                                     `Pain management` = 'Pain Management', 
+                                     `Patient safety` = 'Patient Safety',  
+                                     `Fluid, Electrolyte, and Acid-Base Balance` = 'Fluid, Electrolye, and Acid-Base Balance'
+                                     )
+                  )
+  
   K = with(new_dict, category1[type=="Skills" & corresponding_rq != "Not Included Skills"]) %>% unique() %>% sort() %>% length()
   
+  #Sanity check:
+  # Double check that the number of categories is the same across rounds and rq
+  # Finding: There are different number of skills by the Hygiene and Skin Integrity categoriy across the different research questions. 
+        tmp = new_dict %>% dplyr::filter(type=="Skills" & corresponding_rq != "Not Included Skills") %>% 
+              dplyr::group_by(corresponding_rq, category1, round) %>% 
+              dplyr::reframe(n = n()) %>% 
+              dplyr::ungroup() 
+        tmp_by_rq = tmp %>% 
+          dplyr::group_by(corresponding_rq, category1) %>% 
+          dplyr::reframe(n_unique = length(unique(n))) %>% 
+          dplyr::arrange(desc(n_unique))
+        #if(sum(tmp_by_rq$n_unique>1)){message("Differing number of skills when disaggregated by category ad RQ")}
+        tmp_all  = tmp %>% 
+          dplyr::group_by(category1) %>% 
+          dplyr::reframe(n_unique = length(unique(n))) %>% 
+          dplyr::arrange(desc(n_unique))
+        #if(sum(tmp_by_rq$n_unique>1)){warning("Differing number of skills by category")}
+        tmp %>% tidyr::pivot_wider(names_from = "corresponding_rq", values_from = "n") %>% 
+          dplyr::left_join(tmp_all, by = "category1") %>% 
+          dplyr::arrange(desc(n_unique))
+        # category1                     round Competence Environment Essential n_unique
+        # <chr>                         <dbl>      <int>       <int>     <int>    <int>
+        # 1 Hygiene                           1         15          14        15        2
+        # 2 Hygiene                           2         15          14        15        2
+        # 3 Hygiene                           3         15          14        15        2
+        # 4 Skin Integrity and Wound Care     1         18          19        18        2
+        # 5 Skin Integrity and Wound Care     2         18          19        18        2
+        # 6 Skin Integrity and Wound Care     3         18          19        18        2
+      # Note: Based on the counts (Hygiene decrement, and Skin increment) It seems likely that a skill got transposed in Environment
+        new_dict %>% 
+          dplyr::filter(category1 %in% c("Hygiene","Skin Integrity and Wound Care"))  %>% 
+          dplyr::group_by(skill) %>% 
+          dplyr::reframe(n_categories = length(unique(category1)), 
+                         modal_category = raster::modal(category1)) %>% 
+          dplyr::arrange(desc(n_categories))
+        # skill                                                                 n_categories modal_category               
+        # <chr>                                                                        <int> <chr>                        
+        #   1 Caring for a female urinary collection device like a purewick.                   2 Hygiene                      
+        #   2 NA                                                                               2 Hygiene 
+      
+        # So we have an NA skill assigned a category which should not occur and `Caring for a female urinary collection device like a purewick.` which should go in the Hygiene category
+          # Start with assigning `Caring for a female urinary collection device like a purewick.` to hygiene
+        new_dict = new_dict %>% 
+            dplyr::mutate(category1 = ifelse(skill == "Caring for a female urinary collection device like a purewick.", "Hygiene", category1))
+        
+        #Double check that this has solved it
+        tmp = new_dict %>% dplyr::filter(type=="Skills" & corresponding_rq != "Not Included Skills") %>% 
+          dplyr::group_by(corresponding_rq, category1, round) %>% 
+          dplyr::reframe(n = n()) %>% 
+          dplyr::ungroup() 
+        tmp_all  = tmp %>% 
+          dplyr::group_by(category1) %>% 
+          dplyr::reframe(n_unique = length(unique(n))) %>% 
+          dplyr::arrange(desc(n_unique)) # Good! All unique
+        tmp_by_rq = tmp %>% 
+          dplyr::group_by(corresponding_rq, category1) %>% 
+          dplyr::reframe(n_unique = length(unique(n))) %>% 
+          dplyr::arrange(desc(n_unique))
+        #Let's get the number of skills by category1, 
+        skill_count_all = tmp %>% dplyr::group_by(corresponding_rq, category1) %>% dplyr::reframe(n = unique(n)) %>%  tidyr::pivot_wider(names_from = corresponding_rq, values_from = n)
+    categories = skill_count_all$category1
+    
+        
   # Subsetting data to just skills
   grid = expand.grid(round = 1:3, rq = c("Essential", "Competence", "Environment")) %>% arrange(round)
   final_variable_df <- lapply(1:nrow(grid), function(x){
@@ -50,7 +122,6 @@ construct_data_dictionary<-function(onedrive_wd){
       arrange(category1)
     
     # Seperating based on skill in the list (And arranging alphabetically)
-    categories <- c(unique(subs$category1))
     skill_list <- list()
     for (x in categories) {
       skill_list[[x]] <- subset(subs, category1 == x) %>% dplyr::arrange(skill)
@@ -88,7 +159,7 @@ construct_data_dictionary<-function(onedrive_wd){
   if(!identical(n_prev,nrow(new_dict))){stop("Joined file ended up wiht different number of rows")}
   
   # Sanity check: Number of skill by corresponding_RQ is 178
-  if(with(new_dict, table(skill_id, corresponding_rq)) %>% nrow() != 199){warning("Total skills differed from 199 (3 duplicates) in new_dict")} # Looks good 178 skills with data across three RQs
+  if(with(new_dict, table(skill_id, corresponding_rq)) %>% nrow() != 199){warning("Total skills differed from 199 (3 duplicates) in new_dict")} # 
   if(with( new_dict %>% dplyr::filter(corresponding_rq %in% c("Competence","Environment","Essential")), unique(table(skill_id, corresponding_rq)) ) != 3){warning("Total skills differed from 178 in new_dict")} # Looks good 178 skills with data across three RQs
   
   #Sanity check: skill_id var all the same
@@ -127,9 +198,11 @@ construct_data_dictionary<-function(onedrive_wd){
                  skill_origin = ifelse(str_detect(skill, 'parenteral '), 'Duplicate', skill_origin)) # looks for the parenteral spelling to assign as dupe
   
   # Sanity check (1 perfect replication, 2 fail to replicate [off by 1])
-  test_dict %>% dplyr::filter(skill_origin == "Original 166", round == 1, corresponding_rq == "Essential") %>% nrow() #Yes, replicates 166
-  test_dict %>% dplyr::filter(skill_origin == "Omitted Nu Skills", round == 1, corresponding_rq == "Essential") %>% nrow() #10 instead of 9
-  test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% nrow() #22 instead 21
+  if(test_dict %>% dplyr::filter(skill_origin == "Original 166", round == 1, corresponding_rq == "Essential") %>% nrow() != 166){warning("`Original 166` does not identify 166 skills")} #Yes, replicates 166
+  if(test_dict %>% dplyr::filter(skill_origin == "Omitted Nu Skills", round == 1, corresponding_rq == "Essential") %>% nrow() != 9){warning("Omitted Nu Skills does not identify 9 skills")}#10 instead of 9
+  if(test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% nrow() != 21){warning("Respondant provided does not identify 22 skills")} #22 instead 21
+  
+
   
   #Above non-replicatio issues Issue likely that we have duplicate item assisting a patient with eating
   tmp = test_dict %>% dplyr::filter(skill == "Assisting a patient with eating")
@@ -153,6 +226,69 @@ construct_data_dictionary<-function(onedrive_wd){
   nn = test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% nrow()
   if(nn != 21){warning(paste0("Not replicating 21 respondant provided skills: ", nn))}
   
-
-  return(new_dict %>% dplyr::arrange(col_id))
+      # Given Respondent provided is not replicating, let's print out the skills
+      test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% dplyr::arrange(skill_id) %>% print(n = 30)
+      #Found it, we have another duplicate
+      test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% dplyr::filter(skill_id %in% c(31,32)) %>% dplyr::arrange(skill_id)
+      # We need to which one actually has data
+      col_ids = test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", corresponding_rq == "Essential") %>% dplyr::filter(skill_id %in% c(31,32)) %>% purrr::pluck("col_id")
+      raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))[, col_ids]
+      names(raw) = col_ids
+      tmp2 = raw %>% apply(2,function(x)sum(!is.na(x))) # Look exactly the same
+      sum_val = raw %>% apply(1, function(x)sum(!is.na(x)))
+      raw[sum_val>0, ] # Exactly the same, choose the correctly spelled skill
+      col_ids_duplicate = test_dict %>% dplyr::filter(stringr::str_starts(skill, "Preventing and responsing")) %>% purrr::pluck("col_id")
+      test_dict = test_dict %>% 
+        dplyr::mutate(skill_origin = ifelse(col_id %in% col_ids_duplicate, 'Duplicate', skill_origin)) #All empty responses: Assisting a patient with eating 
+      
+      test_dict %>% dplyr::filter(skill_origin == "Duplicate", round == 1, corresponding_rq == "Essential") %>% dplyr::group_by(skill) %>% dplyr::summarise(n = n())
+  
+    nn = test_dict %>% dplyr::filter(skill_origin == "Respondant Provided", round == 1, corresponding_rq == "Essential") %>% nrow()
+    if(nn != 21){warning(paste0("Not replicating 21 respondant provided skills: ", nn))}   
+    
+    
+    # Clean up by removing skill_id from duplicates
+    test_dict = test_dict %>% dplyr::mutate(skill_id = ifelse(skill_origin == "Duplicate", NA, skill_id), var = ifelse(skill_origin == "Duplicate", NA, var))
+    test_dict %>% dplyr::filter(!is.na(var)) %>%  dplyr::group_by(corresponding_rq, round) %>% dplyr::summarise(n = n()) #looks good replicating the 196 skill
+    
+  # Replicate the orgininall 166 skill counts in Fara's 4/15/2025 email
+    tmp = test_dict %>% dplyr::filter(skill_origin=="Original 166") %>% 
+      dplyr::group_by(corresponding_rq, category1, round) %>% 
+      dplyr::reframe(n = n()) %>% 
+      dplyr::ungroup() 
+    #Let's get the number of skills by category1, 
+    skill_count_166 = tmp %>% dplyr::group_by(corresponding_rq, category1) %>% dplyr::reframe(n = unique(n)) %>%  tidyr::pivot_wider(names_from = corresponding_rq, values_from = n) %>% 
+      dplyr::mutate(Fara = dplyr::case_when(
+        startsWith(category1,"Activity") ~ 17, 
+        startsWith(category1,"Asepsis") ~ 6,
+        startsWith(category1,"Bowel") ~ 6, 
+        startsWith(category1,"Cardiovascular") ~ 5, 
+        startsWith(category1,"Fluid") ~ 14, 
+        startsWith(category1, "Laboratory") ~ 13, 
+        startsWith(category1,"Medication") ~ 32, 
+        startsWith(category1,"Hygiene") ~ 14,
+        startsWith(category1,"Oxygenation") ~ 20, 
+        startsWith(category1,"Pain") ~ 6, 
+        startsWith(category1,"Patient Safety") ~ 4, 
+        startsWith(category1, "Skin") ~ 15, 
+        startsWith(category1,"Urinary") ~ 13
+      ))
+    sum(skill_count_166$Fara) + 1
+    sum(skill_count_166$Essential)  
+  
+    # categories that do not replicate Fara
+    test_dict %>% dplyr::filter(
+      corresponding_rq == "Essential", 
+      round == 1, 
+      skill_origin == "Original 166", 
+      category1 %in% (skill_count_166 %>% dplyr::filter(Essential != Fara) %>% purrr::pluck("category1"))
+    ) %>% 
+    dplyr::select(col_id,skill_id,category1,skill) %>% dplyr::arrange(category1,skill_id) %>% 
+    dplyr::filter(startsWith(category1,"Medication")) %>% 
+      print(n = 50)
+    
+    test_dict %>% dplyr::filter(skill_origin %in% c("Omitted Nu Skills","Original 166", "Respondant Provided"), round == 1, corresponding_rq == "Essential") %>% dplyr::group_by(skill_origin) %>% dplyr::reframe(n = n()) 
+      
+      
+  return(test_dict %>% dplyr::arrange(col_id))
 }
