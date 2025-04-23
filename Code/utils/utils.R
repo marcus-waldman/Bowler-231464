@@ -189,7 +189,7 @@ construct_data_dictionary<-function(onedrive_wd){
   
   # Fix Duplicate Issues
   test_dict <- new_dict |> # Change
-    filter(type == 'Skills') |> # Subsetting data to just skills
+    #filter(type == 'Skills') |> # Subsetting data to just skills
     mutate(skill_origin = case_when(
       participant_generated == FALSE & corresponding_rq != 'Not Included Skills' & category1 != 'Nutrition' ~ 'Original 166', # Names the original 166 skills
       participant_generated == TRUE ~ 'Respondant Provided',  # Participant created skills from round 1
@@ -288,7 +288,12 @@ construct_data_dictionary<-function(onedrive_wd){
       print(n = 50)
     
     test_dict %>% dplyr::filter(skill_origin %in% c("Omitted Nu Skills","Original 166", "Respondant Provided"), round == 1, corresponding_rq == "Essential") %>% dplyr::group_by(skill_origin) %>% dplyr::reframe(n = n()) 
-      
+    
+    
+  # Include key with rater
+    test_dict = test_dict %>% dplyr::mutate(var = ifelse(full_stem == "SYSTEM: Owner Full Name" & type == "Key", "participant", var), 
+                                            var = ifelse(startsWith(full_stem,"SYSTEM: Owner Email") & type=="Key", "email", var))
+    
       
   return(test_dict %>% dplyr::arrange(col_id))
 }
