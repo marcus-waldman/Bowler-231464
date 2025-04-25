@@ -297,3 +297,138 @@ construct_data_dictionary<-function(onedrive_wd){
       
   return(test_dict %>% dplyr::arrange(col_id))
 }
+
+get_longdat_skills<-function(rq, dat){
+  
+  ret = dat %>% dplyr::select(participant, email,dplyr::ends_with(tolower(rq)))
+  names(ret) = stringr::str_remove_all(names(ret), paste0("_",rq))
+  ret = ret %>% 
+    tidyr::pivot_longer(starts_with("skill"), names_to = "varshort") %>% 
+    dplyr::mutate(round = stringr::str_sub(varshort, start = stringr::str_length(varshort), end = stringr::str_length(varshort)) %>% as.integer(), 
+                  varshort = stringr::str_remove_all(varshort, "_ro[1-9]")) %>% 
+    dplyr::relocate(round,.before=value) %>% 
+    dplyr::arrange(participant,varshort,round)
+  names(ret)[names(ret)=="value"] = rq
+  
+  return(ret)
+}
+
+varshort_skills<-function(dict){
+  
+  out =dict %>%
+    dplyr::filter(startsWith(var, "skill")) %>% 
+    dplyr::mutate(
+      varshort = var %>% 
+        stringr::str_remove_all(pattern = paste0("_", tolower(corresponding_rq))) %>% 
+        stringr::str_remove_all(pattern = paste0("_ro",round))
+    ) %>% 
+    dplyr::group_by(varshort) %>% 
+    dplyr::reframe(skill = unique(skill), category = category1[1], skill_origin = skill_origin[1]) %>% 
+    na.omit()
+  
+  print(table(out$skill_origin)) # yes, 9,166,21
+  
+  return(out)
+  
+  
+}
+
+
+
+# 
+# root_wd<-function(analyst,computer){
+#   analyst = tolower(analyst); computer = tolower(computer)
+#   
+#   if(analyst=="marcus"){
+#     root = ifelse(computer=="work", "C:/Users/waldmanm", "C:/Users/marcu")
+#   } else if (analyst == "cristian"){
+#     root = ifelse(computer=="work","C:/Users/sarabiac", "/Users/cristiansarabia/Library/CloudStorage")
+#   } else {
+#     root = NULL
+#   }
+#   return(root)
+# }
+# onedrive_wd<-function(who, where){
+#   
+#   who = tolower(who); where = tolower(where)
+#   root = root_wd(analyst=who,computer=where)
+#   if(who=="marcus"){
+#      
+#        onedrive <- 
+#          file.path(
+#            root, 
+#            "The University of Colorado Denver", 
+#             "Bowler, Fara - March 2023_FB BH SH"
+#            )
+#    
+#     } else if (who == "cristian"){
+#        
+#       onedrive <- 
+#          file.path(
+#            root, 
+#            ifelse(where=="home", 
+#                   "OneDrive-TheUniversityofColoradoDenver", 
+#                   "OneDrive - The University of Colorado Denver"
+#                   ), 
+#             "College of Nursing", 
+#             "Skills Study", 
+#             "Bowler, Fara's files - March 2023_FB BH SH"
+#           )
+#       
+#    } else {
+#      
+#      onedrive <- NULL
+#      
+#    }
+#   
+#   return(onedrive)
+#   
+# }
+# github_wd<-function(who, where){
+#   
+#   who = tolower(who); where = tolower(where)
+#   root = root_wd(analyst=who,computer=where)
+#   if(who=="marcus"){
+#     
+#     git <- 
+#       file.path(
+#         root, 
+#         "git-repositories", 
+#         "Bowler-231464"
+#       )
+#     
+#   } else if (who == "cristian"){
+#     
+#     git <- 
+#       file.path(
+#         root, 
+#         ifelse(tolower(where)=="home", 
+#                "OneDrive-TheUniversityofColoradoDenver", 
+#                "OneDrive - The University of Colorado Denver"
+#         ), 
+#         "College of Nursing", 
+#         "Repos",
+#         ifelse(tolower(where)=="home", 
+#                "Mac Repo", 
+#                "Windows Repo"
+#         ),
+#         "Bowler-231464"
+#       )
+#     
+#   } else {
+#     
+#     git <- NULL
+#     
+#   }
+#   
+#   return(git)
+#   
+# }
+# wd<-function(which.dir = "root", who, where){
+#   dplyr::case_when(
+#     which.dir=="root" ~  root_wd(analyst=who,computer=where), 
+#     which.dir=="onedrive" ~ onedrive_wd(who=who, where=where), 
+#     which.dir=="github" ~ github_wd(who=who,where=where), 
+#     .default = NULL
+#   )
+# }
