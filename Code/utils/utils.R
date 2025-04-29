@@ -334,6 +334,205 @@ varshort_skills<-function(dict){
 }
 
 
+get_essential_environment_competence_longdat<-function(raw, dict){
+  #Extract only the appropriate columns (i.e., questions about skills, progress, and participant)
+  extracted_cols =  with(dict, col_id[ var == "participant" | var == "email" | startsWith(var,"progress") | startsWith(var,"skill")]) %>% sort()
+  dat = raw %>% dplyr::select(dplyr::any_of(extracted_cols))
+  
+  #Remove any rows in the dict corresponding to columns in raw that are not used
+  dict_dat = dict %>% dplyr::slice(extracted_cols)
+  
+  # Rename the variables according to the dictionary var code
+  names(dat) = dict_dat$var
+  
+  # Construct long dataset that with participant responses to each RQ by round and skill
+  longdat = get_longdat_skills(rq="essential", dat = dat) %>% 
+    dplyr::left_join(get_longdat_skills(rq="environment", dat = dat), by = c("participant", "email", "varshort", "round")) %>% 
+    dplyr::left_join(get_longdat_skills(rq = "competence", dat = dat), by = c("participant", "email", "varshort", "round"))
+  
+  
+  
+  # Remove Leslie Graham's duplicate responses associated with incorrect email address
+  longdat = longdat %>% 
+    dplyr::filter(email != "leslie.graham@durhamcollege.cs")
+  
+  
+  
+  # Identify and mask round 2 and round 3 responses to skills that reached 80% consensus in round 1
+  consensus_skill_ro1 = longdat %>% 
+    dplyr::filter(round==1) %>% 
+    dplyr::group_by(varshort) %>% 
+    dplyr::reframe(pct_essential_ro1 = mean(essential == "Yes", na.rm = T)) %>% 
+    dplyr::filter(pct_essential_ro1 >= .80 | pct_essential_ro1 <=.20) %>% 
+    purrr::pluck("varshort")
+  
+  longdat = longdat %>% 
+    dplyr::mutate(
+      essential = dplyr::case_when(
+        (varshort %in% consensus_skill_ro1) & (round %in% c(2,3)) ~ NA,
+        .default = essential
+      ), 
+      environment = dplyr::case_when(
+        (varshort %in% consensus_skill_ro1) & (round %in% c(2,3)) ~ NA,
+        .default = environment
+      ), 
+      competence = dplyr::case_when(
+        (varshort %in% consensus_skill_ro1) & (round %in% c(2,3)) ~ NA,
+        .default = competence
+      )
+    )
+  
+  # Identify and mask responses to skills in round 3 that reached 80% consensus in round 1
+  consensus_skill_ro2 = longdat %>% 
+    dplyr::filter(round==2) %>% 
+    dplyr::group_by(varshort) %>% 
+    dplyr::reframe(pct_essential_ro1 = mean(essential == "Yes", na.rm = T)) %>% 
+    dplyr::filter(pct_essential_ro1 >= .80 | pct_essential_ro1 <=.20) %>% 
+    purrr::pluck("varshort")
+  
+  longdat = longdat %>% 
+    dplyr::mutate(
+      essential = dplyr::case_when(
+        (varshort %in% consensus_skill_ro2) & (round==3) ~ NA,
+        .default = essential
+      ), 
+      environment = dplyr::case_when(
+        (varshort %in% consensus_skill_ro2) & (round==3) ~ NA,
+        .default = environment
+      ), 
+      competence = dplyr::case_when(
+        (varshort %in% consensus_skill_ro2) & (round==3) ~ NA,
+        .default = competence
+      )
+    )
+  
+  
+  #Sanity check: Do we still have 196 skills per round
+  longdat %>% dplyr::group_by(round) %>% dplyr::reframe(n = length(unique(varshort))) #yes
+  
+  
+  #Mask the erroneously carry forward responses recorded for individuals who did not participate in rounds 2 or 3
+  
+  #Construct a long progress dataframe that give the progress of each responder in each round
+  progress_df = raw[,dict$col_id[which(dict$type == "Progress" | dict$var=="participant" | dict$var=="email")]] %>% data.frame()
+  names(progress_df) = c("participant", "email","progress_ro1", "progress_ro2", "progress_ro3")
+  progress_df = progress_df %>% 
+    dplyr::mutate(across(progress_ro1:progress_ro3, as.numeric)) %>% 
+    tidyr::pivot_longer(progress_ro1:progress_ro3, names_to = "round", values_to = "progress") %>% 
+    dplyr::mutate(round = round %>% stringr::str_remove_all("progress_ro") %>% as.integer())
+  
+  
+  # Filter out Leslie' Graham's duplicate responses from incorrect email
+  progress_df = progress_df %>% dplyr::filter(email != "leslie.graham@durhamcollege.cs") 
+  
+  ## To be counted as sufficient progress, require at least 80% in that round
+  #  progress_df = progress_df  %>% 
+  #    dplyr::filter(progress>=80) 
+  
+  # Get the number of respondants that meet qualifications
+  progress_df %>% dplyr::group_by(round) %>% dplyr::summarise(n = length(unique(email)))
+  
+  # Join the progress data frame
+  longdat = longdat %>% 
+    dplyr::left_join(progress_df, by = c("participant","email","round")) %>% 
+    dplyr::relocate(progress, .before = essential)
+  
+  #Sanity check: Do we still have 196 skills per round
+  longdat %>% dplyr::group_by(round) %>% dplyr::reframe(n = length(unique(varshort))) #yes      
+  
+  # Set missing responses where insufficient progress was made
+  longdat = longdat %>% 
+    dplyr::mutate(
+      essential = dplyr::case_when(is.na(progress) ~ NA, .default = essential),
+      environment = dplyr::case_when(is.na(progress) ~ NA, .default = environment),
+      competence = dplyr::case_when(is.na(progress) ~ NA, .default = competence),
+    )
+  
+  # Sanity check: is there a correlation between the progress in a round and the number of essential responses answered
+  essentials_answered = longdat %>% dplyr::group_by(participant,round) %>% dplyr::reframe(progress = unique(progress), n_ans = sum(!is.na(essential)))
+  ggplot(essentials_answered, aes(x = progress, y = n_ans)) + geom_point() + facet_grid(round~.) #Yes, however it appears that in round 3 people who had 100% progress asnwered differnet number of questions there's a correlation 
+  # Follow up: People with 100% progress answer different number of questions?
+  longdat %>% dplyr::filter(progress==100) %>% dplyr::group_by(participant,round) %>% dplyr::reframe(progress = unique(progress), n_ans = sum(!is.na(essential))) %>% dplyr::ungroup() %>% dplyr::group_by(round) %>% dplyr::reframe(min = min(n_ans), max = max(n_ans))
+  # Yes, there does seem to be differing number of questrions answered based on 100% progress in round 3.
+  
+  # Sanity check: Missing data patterns need to make sense. In otherwords, only can answer environment and competence if answered essential
+  for(ro in 1:3){
+    print(paste0("round ", ro))
+    print(mice::md.pattern(longdat %>% dplyr::filter(round == ro) %>% dplyr::select(essential,environment,competence), plot = F))
+  }
+  # Appears in round 3 there are four incidents where essential is missing but environment and or competence is not missing. 
+  
+  # Mask any responses to environment and competence if essential is missing
+  longdat = longdat %>% 
+    dplyr::mutate(
+      environment = ifelse(is.na(essential), NA, environment), 
+      competence = ifelse(is.na(essential), NA, competence)
+    )
+  
+  # Sanity check: Missing data patterns need to make sense. In otherwords, only can answer environment and competence if answered essential
+  for(ro in 1:3){
+    print(paste0("round ", ro))
+    print(mice::md.pattern(longdat %>% dplyr::filter(round == ro) %>% dplyr::select(essential,environment,competence), plot = F))
+  } #Yes, they all make sense now.
+  
+  
+  
+  # Sanity check: Do any round 1 consensus items show up in round 2 or 3 in longdat?
+  intersect(longdat %>% dplyr::filter(round > 1) %>% purrr::pluck("varshort") %>% unique(), consensus_skill_ro1) #No
+  
+  # Sanity check Do any round 2 consensus items show up in round 3 in longdat?
+  intersect(longdat %>% dplyr::filter(round > 2) %>% purrr::pluck("varshort") %>% unique(), consensus_skill_ro2) #No
+  
+  
+  
+  # Finalize the dataset 
+  
+  #Drop rows where there is no essential response (and hence no competence or environment response)
+  longdat = longdat %>% 
+    dplyr::filter(!is.na(essential))
+  
+  
+  # Sanity check See pattern of included items by round      
+  longdat %>% dplyr::mutate(answered = !is.na(essential)) %>% dplyr::group_by(varshort, round) %>% dplyr::reframe(answered = sum(answered)>0) %>% dplyr::mutate(answered = ifelse(answered==F, NA, answered)) %>% 
+    tidyr::pivot_wider(names_from = round, values_from = answered) %>% 
+    dplyr::select(-varshort) %>% 
+    md.pattern()
+  #Caution! NOTE that there are three items that show up in round 3 but do not show up in rounds 1 and 2
+  #Identify which three items
+  longdat %>% dplyr::mutate(answered = !is.na(essential)) %>% dplyr::group_by(varshort, round) %>% dplyr::reframe(answered = sum(answered)>0) %>% dplyr::mutate(answered = ifelse(answered==F, NA, answered)) %>% 
+    tidyr::pivot_wider(names_from = round, values_from = answered) %>% 
+    dplyr::filter(is.na(`1`), is.na(`2`)) %>% 
+    dplyr::left_join(varshort_skills(dict = dict), by = "varshort")
+  # All three items are nutrition items that were omitted
+  
+  
+  # Drop rows corresponding to participants with no recorded progress in the round
+  longdat = longdat %>% 
+    dplyr::filter(!is.na(progress)) 
+  
+  
+  
+  # Sanity checks
+  # Participants in each round
+  identical(
+    longdat %>% dplyr::group_by(round) %>% dplyr::reframe(n = length(unique(email))), 
+    progress_df %>% dplyr::group_by(round) %>% dplyr::summarise(n = length(unique(email)))
+  ) # Yes 
+  
+  # Skills in each round
+  longdat %>% dplyr::group_by(round) %>% dplyr::reframe(nskills = length(unique(varshort))) 
+  #Does the 108 make sense
+  identical(166 - length(consensus_skill_ro1) + (9 - 3) + 21,108) 
+  # Yes 108 = 166 items administered - 85 consensus items in round 1 + adding 6 of 9 omitted nutrition items + adding 21 user provided items in round 3
+  #Does 89 make sense
+  identical(108 - length(consensus_skill_ro2) + 3, 89) 
+  #Yes 89 = 108 round 2 items - 22 items reaching consensus + the remaining 3 omitted nutrition items.
+  
+  
+  return(longdat)
+  
+}
+
 
 # 
 # root_wd<-function(analyst,computer){
