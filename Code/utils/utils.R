@@ -510,9 +510,69 @@ get_essential_environment_competence_longdat<-function(raw, dict){
   longdat = longdat %>% 
     dplyr::filter(!is.na(progress)) 
   
+  # Identify the n=36 rounds 1-3 completers and add a column identifying if a participant was a completer
+  completers_36 = longdat %>% 
+    dplyr::group_by(email, round) %>% 
+    dplyr::reframe(progress = progress[1]) %>% 
+    dplyr::group_by(email) %>% 
+    dplyr::reframe(n = n()) %>% 
+    dplyr::filter(n==3)
+  longdat = longdat %>% dplyr::mutate(completer = (email %in% completers_36$email)) %>% 
+    dplyr::relocate(completer, .after = participant)
   
+  # Sanity check Expect no environment resopnse if participant asnwered "no" to essential
+  longdat %>% dplyr::filter(essential == "No") %>% with(., table(environment,competence,round, useNA = "always"))
+    # Most are not answered, but there are a small amount of cases where they were answered
+    # Response: Mask those small amount of cases where they were answered
+    longdat = longdat %>% 
+      dplyr::mutate(
+        competence = ifelse(essential == "No", NA, competence), 
+        environment = ifelse(essential == "No", NA, environment)
+      )
+
+  # Clean-up: Make the categories for environment prettier and shorter
+  longdat = longdat %>% 
+    dplyr::mutate(
+      environment = dplyr::case_when(
+        startsWith(environment, "clinical") ~ "Clinical", 
+        startsWith(environment, "didactic") ~ "Didactic", 
+        startsWith(environment, "simulation") ~ "Simulation", 
+        .default = NA
+      )
+    )
   
-  # Sanity checks
+  # Turn to essential, environment, competence to factor
+   longdat = longdat %>% 
+     dplyr::mutate(
+       essential = dplyr::case_when(
+         essential == "No" ~ 0,
+         essential == "Yes" ~ 1, 
+         .default = NA
+       ), 
+       competence = dplyr::case_when(
+         competence == "No" ~ 0,
+         competence == "Yes" ~ 1, 
+         .default = NA
+       ), 
+       environment = dplyr::case_when(
+         environment == "Didactic" ~ 0,
+         environment == "Simulation" ~ 1, 
+         environment == "Clinical" ~ 2,
+         .default = NA
+       )
+     ) %>% 
+     dplyr::mutate(
+       essential = factor(essential, levels = 0:1, labels = c("No","Yes")), 
+       competence = factor(competence, levels = 0:1, labels = c("No","Yes")),
+       environment = factor(environment, levels = 0:2, labels = c("Didactic","Simulation", "Clinical"))
+     ) 
+   
+   longdat$essential = relevel(longdat$essential, ref = "No")
+   longdat$competence = relevel(longdat$competence, ref = "No")
+   longdat$environment = relevel(longdat$environment, ref = "Didactic")
+   
+    
+  #### Sanity checks ###
   # Participants in each round
   identical(
     longdat %>% dplyr::group_by(round) %>% dplyr::reframe(n = length(unique(email))), 
@@ -528,10 +588,105 @@ get_essential_environment_competence_longdat<-function(raw, dict){
   identical(108 - length(consensus_skill_ro2) + 3, 89) 
   #Yes 89 = 108 round 2 items - 22 items reaching consensus + the remaining 3 omitted nutrition items.
   
+
   
   return(longdat)
   
 }
+
+get_essential_by_round<-function(longdat, round = T){
+  consensus_long = lapply(1:3, function(ro){
+    
+    consensus_df = longdat %>% dplyr::filter(round == ro) %>% 
+      dplyr::group_by(varshort) %>% 
+      dplyr::reframe(n = length(essential), 
+                     `Yes (%)` = 100*mean(essential == "Yes"), 
+                     `No (%)` = 100*mean(essential == "No")
+                     )
+    
+    
+    varshort_df = varshort_skills(dict=dict) %>% 
+      dplyr::left_join(consensus_df, by = "varshort") %>% 
+      dplyr::mutate(round = ro, rq = "Is this skill essential?") %>% 
+      dplyr::relocate(rq,round)
+    
+    return(varshort_df)
+    
+  }) %>% dplyr::bind_rows()
+  
+  if(round){
+    consensus_long = consensus_long %>% 
+      dplyr::mutate(across(`Yes (%)`:`No (%)`, function(x){round(x,1)}))
+  }
+  return(consensus_long)
+}
+get_competence_by_round<-function(longdat, round = T){
+  consensus_long = lapply(1:3, function(ro){
+    
+    consensus_df = longdat %>% dplyr::filter(round == ro) %>% 
+      dplyr::group_by(varshort) %>% 
+      dplyr::reframe(n = length(!is.na(competence)), 
+                     `Yes (%)` = 100*mean(competence == "Yes",na.rm=T), 
+                     `No (%)` = 100*mean(competence == "No",na.rm =T)
+      )
+    
+    
+    varshort_df = varshort_skills(dict=dict) %>% 
+      dplyr::left_join(consensus_df, by = "varshort") %>% 
+      dplyr::mutate(round = ro, rq = "Should skill be taught to competence?") %>% 
+      dplyr::relocate(rq,round)
+    
+    return(varshort_df)
+    
+  }) %>% 
+  dplyr::bind_rows() %>% 
+  dplyr::mutate( Mode = ifelse(`No (%)` > `Yes (%)`, "No", "Yes"))
+  
+  if(round){
+    consensus_long = consensus_long %>% 
+      dplyr::mutate(across(`Yes (%)`:`No (%)`, function(x){round(x,1)}))
+  }
+  
+  return(consensus_long)
+}
+get_environment_by_round<-function(longdat, round = T){
+  consensus_long = lapply(1:3, function(ro){
+    
+    consensus_df = longdat %>% dplyr::filter(round == ro) %>% 
+      dplyr::group_by(varshort) %>% 
+      dplyr::reframe(n = length(!is.na(environment)), 
+                     `Didactic (%)` = 100*mean(environment == "Didactic",na.rm =T), 
+                     `Simulation (%)` = 100*mean(environment == "Simulation",na.rm =T), 
+                     `Clinical (%)` = 100*mean(environment == "Clinical",na.rm=T)
+      )
+    
+    
+    varshort_df = varshort_skills(dict=dict) %>% 
+      dplyr::left_join(consensus_df, by = "varshort") %>% 
+      dplyr::mutate(round = ro, rq = "How should skill be taught?") %>% 
+      dplyr::relocate(rq,round)
+    
+    return(varshort_df)
+    
+  }) %>% 
+  dplyr::bind_rows() %>% 
+  dplyr::mutate(
+      Mode = dplyr::case_when(
+        .default = "Didactic", 
+        (`Simulation (%)` > `Didactic (%)`) & (`Simulation (%)` > `Clinical (%)`) ~ "Simulation", 
+        (`Clinical (%)` > `Didactic (%)`) & (`Clinical (%)` > `Simulation (%)`) ~ "Clinical"
+      )
+    )
+  
+  if(round){
+    consensus_long = consensus_long %>% 
+      dplyr::mutate(across(`Didactic (%)`:`Clinical (%)`, function(x){round(x,1)}))
+  }
+  
+  return(consensus_long)
+}
+
+
 
 
 # 
