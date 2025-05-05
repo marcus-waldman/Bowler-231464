@@ -116,3 +116,117 @@ final_demo_df <- left_join(df_3, q10)
 # reordering columsn 
 # final_demo_df <- final_demo_df
 #  relocate(`Role Currently Hold`, .after = `Primary Role`)
+
+################################################################################################################################################################
+# Descriptive statistics
+
+# Primary Role
+final_demo_df |>
+  group_by(`Primary Role`)|>
+  reframe(N = n())
+
+# Age Category
+final_demo_df |>
+  group_by(`Age Category`) |>
+  reframe(N= n())
+
+# Gender
+final_demo_df |>
+  group_by(`Which category do you best identify`) |>
+  reframe(N = n())
+
+# Region Located
+final_demo_df |>
+  group_by(`What geog. region are you located`) |>
+  reframe(N = n())
+
+# Years worked in Education
+final_demo_df |>
+  group_by(`How many years have you worked in an educator role`) |>
+  reframe(N = n())
+
+# Years experience as RN
+final_demo_df |>
+  group_by(`Years experience as a RN`) |>
+  reframe(N = n())
+
+# Clinical Setting
+final_demo_df |>
+  group_by(`Clinical Setting`) |>
+  reframe(N = n())
+
+# Check that all that apply Questions
+###########################
+
+# Role currently holds
+
+# Levels of programs
+
+# Primary area of expertise
+
+
+
+###############################
+# Subsetting to 36 participants
+###############################
+# final_list <- raw_long |>
+#   filter(`SYSTEM: Survey Progress...1655` <= 80) # showing only 34 when it should be 36
+
+
+list_final <- tibble(
+  name = c('Abigail Barron', 'Angela Dawn Cox', 'Ann Michelle Hartman', 'Ashley Franklin', 'Beth Ann Rogers', 'Beth Bauer', 'Beth Stephens', 'Caitlin Yeager',
+           'Calvin Miller', 'Carla Orsburn', 'Carman Godfrey', 'Casey Norris', 'Darcey Rosenblum', 'Gwen Lindemann', 'Janelle Chopp', 'Jennifer Ross',
+           'Jessica Hutchinson', 'Jodi Blankenship', 'Julie Stutzman', 'Julie Wilken', 'Kara Sump', 'Katherine Foss', 'Kelli Valdivieso', 'Leslie Long',
+           'Linda M Gonzalez', 'Lisa Flower', 'Miranda Peterson', 'Nancy McCorkle', 'Nicole Albert', 'Rachel Faulkner', 'Renae Schondel','Ruth Neese',
+           'Sarah Beman', 'Sarah P Hodges', 'Teresa Connolly', 'Vickie Abel'))
+
+final_completers <- final_demo_df[final_demo_df$name %in% list_final$name, ]
+
+
+########################################
+
+# Primary role
+final_completers |>
+  group_by(`Primary Role`)|>
+  reframe(N = n())
+
+# Age Category
+final_completers |>
+  group_by(`Age Category`) |>
+  reframe(N= n())
+
+# Gender
+final_completers |>
+  group_by(`Which category do you best identify`) |>
+  reframe(N = n())
+
+# Region Located
+final_completers |>
+  group_by(`What geog. region are you located`) |>
+  reframe(N = n())
+
+# Years in educator role
+final_completers |>
+  group_by(`How many years have you worked in an educator role`) |>
+  reframe(N = n())
+
+# Years experience in RN
+final_completers |>
+  group_by(`Years experience as a RN`) |>
+  reframe(N = n())
+
+# Clinical setting
+final_completers |>
+  group_by(`Clinical Setting`) |>
+  reframe(N = n())
+
+# Check that all that apply
+###########################
+
+# Role currently holds
+
+# Levels of programs
+
+# Primary area of expertise
+
+
