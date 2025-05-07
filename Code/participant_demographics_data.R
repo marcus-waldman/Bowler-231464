@@ -113,7 +113,7 @@ q10 <- df |>
 
 
 # Joining multiple dfs into one
-df_1 <- left_join(main_df, q1)
+df_1 <- left_join(main_df, q2)
 df_2 <- left_join(df_1, q5)
 df_3 <- left_join(df_2, q9)
 
