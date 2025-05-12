@@ -620,10 +620,11 @@ get_essential_by_round<-function(longdat, round = T){
   }
   return(consensus_long)
 }
+
 get_competence_by_round<-function(longdat, round = T){
   consensus_long = lapply(1:3, function(ro){
     
-    consensus_df = longdat %>% dplyr::filter(round == ro) %>% 
+    consensus_df = longdat %>% dplyr::filter(round == ro, essential == "Yes") %>% 
       dplyr::group_by(varshort) %>% 
       dplyr::reframe(n = length(!is.na(competence)), 
                      `Yes (%)` = 100*mean(competence == "Yes",na.rm=T), 
@@ -649,10 +650,12 @@ get_competence_by_round<-function(longdat, round = T){
   
   return(consensus_long)
 }
+
+
 get_environment_by_round<-function(longdat, round = T){
   consensus_long = lapply(1:3, function(ro){
     
-    consensus_df = longdat %>% dplyr::filter(round == ro) %>% 
+    consensus_df = longdat %>% dplyr::filter(round == ro, essential == "Yes") %>% 
       dplyr::group_by(varshort) %>% 
       dplyr::reframe(n = length(!is.na(environment)), 
                      `Didactic (%)` = 100*mean(environment == "Didactic",na.rm =T), 
