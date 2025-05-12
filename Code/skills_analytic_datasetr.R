@@ -137,6 +137,8 @@ plt_rq2 = ggplot(data = rq2_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   ggthemes::scale_fill_wsj() +
   thm
 
+#ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 8.5, width = 8.5)
+
 
 # RQ3: 
 
@@ -149,23 +151,15 @@ rq3_df = competence_by_round %>% dplyr::filter(skill_origin == "Original 166") %
 
 # Add code here for plot!
 
-ggplot(data = rq3_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
+plt_rq3 = ggplot(data = rq3_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   geom_bar(stat = 'identity', position = "dodge", alpha = 2/3) +
   geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
-  labs(x = 'Enter X axis label', y = element_blank(), title = 'Enter Title') +
+  labs(x = 'Competnecy Needed?', y = element_blank(), title = 'Skill Competency', subtitle = 'Is Competency Needed for the 95 Essential Skills?', color = 'Competency', fill = 'Competency') +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm
 
-
-
-
-
-
-
-
-
-
+#ggsave(plot = plt_rq3, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq3_plot.png"), height = 8.5, width = 8.5)
 
 
 
