@@ -6,9 +6,13 @@ library(writexl)
 library(mice)
 library(ggthemes)
 
-root_wd = "C:/Users/waldmanm/"
-onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
-github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+# root_wd = "C:/Users/waldmanm/"
+# onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
+# github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
+root_wd = "/Users/cristiansarabia/Library/CloudStorage"
+onedrive_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
+github_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Repos/Mac Repo/Bowler-231464")
 
 source(file.path(github_wd, "Code", "utils", "utils.R"))
 
@@ -124,7 +128,16 @@ rq2_df = environment_by_round %>% dplyr::filter(skill_origin == "Original 166") 
   dplyr::ungroup()
 
 # Add code here for plot!
+plt_rq2 = ggplot(data = rq2_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
+  geom_bar(stat="identity", position = "dodge", alpha = 2/3) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(title = 'Curriculum Type', y = element_blank()) +
+  ggthemes::scale_color_wsj(guide = "none") +
+  ggthemes::scale_fill_wsj() +
+  thm
 
+#ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 8.5, width = 8.5)
 
 
 # RQ3: 
@@ -138,17 +151,15 @@ rq3_df = competence_by_round %>% dplyr::filter(skill_origin == "Original 166") %
 
 # Add code here for plot!
 
+plt_rq3 = ggplot(data = rq3_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
+  geom_bar(stat = 'identity', position = "dodge", alpha = 2/3) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
+  labs(x = 'Competnecy Needed?', y = element_blank(), title = 'Skill Competency', subtitle = 'Is Competency Needed for the 95 Essential Skills?', color = 'Competency', fill = 'Competency') +
+  ggthemes::scale_color_wsj(guide = "none") +
+  ggthemes::scale_fill_wsj() +
+  thm
 
-
-
-
-
-
-
-
-
-
-
+#ggsave(plot = plt_rq3, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq3_plot.png"), height = 8.5, width = 8.5)
 
 
 
