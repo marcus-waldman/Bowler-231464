@@ -6,13 +6,13 @@ library(writexl)
 library(mice)
 library(ggthemes)
 
-# root_wd = "C:/Users/waldmanm/"
-# onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
-# github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+ root_wd = "C:/Users/waldmanm/"
+ onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
+ github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
-root_wd = "/Users/cristiansarabia/Library/CloudStorage"
-onedrive_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
-github_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Repos/Mac Repo/Bowler-231464")
+#root_wd = "/Users/cristiansarabia/Library/CloudStorage"
+#onedrive_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
+#github_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Repos/Mac Repo/Bowler-231464")
 
 source(file.path(github_wd, "Code", "utils", "utils.R"))
 
@@ -98,7 +98,11 @@ rq1 = essential_by_round %>%
   dplyr::mutate(
     x = factor(round,levels = 1:4, labels = c("1","2","3","Never")),
     Result = plyr::mapvalues(result, c("n_yes","n_no", "never"), c(2,1,3)) %>% factor(levels = 1:3, labels = c("Nonessential", "Essential", "No consensus"))
-  )
+  ) %>% 
+  dplyr::mutate(
+    pct = round(100*n/97,2), 
+    lbl = paste0(as.character(n), " (",pct,"%)")
+  ) 
 
 
 thm = ggthemes::theme_few(base_family = "serif", base_size = 16)
@@ -109,7 +113,7 @@ thm$legend.justification = c(.75,.99)
 
 plt_rq1 = ggplot(data = rq1, aes(x = x, y = n, col = Result, fill = Result)) + 
   geom_bar(stat="identity", position = "dodge", alpha = 2/3) +
-  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
+  geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
   labs(title = "Essential Skills", subtitle = "Totals: Nonessential (n=2); Essential (n=95); No consensus (n=69)", x = "Round", y = element_blank()) +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
@@ -125,19 +129,28 @@ rq2_df = environment_by_round %>% dplyr::filter(skill_origin == "Original 166") 
   dplyr::filter(keep == 1) %>% 
   dplyr::group_by(Mode) %>% 
   dplyr::reframe(n = n()) %>% 
-  dplyr::ungroup()
+  dplyr::ungroup() %>% 
+  dplyr::mutate(
+    pct = round(100*n/97,2), 
+    lbl = paste0(as.character(n), " (",pct,"%)")
+  ) 
+
 
 # Add code here for plot!
+thm$legend.position = "none"
+
+
 plt_rq2 = ggplot(data = rq2_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   geom_bar(stat="identity", position = "dodge", alpha = 2/3) +
-  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
+  geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
   scale_y_continuous(limits = c(0, 100)) +
   labs(title = 'Curriculum Type', y = element_blank()) +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm
 
-#ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 8.5, width = 8.5)
+plt_rq2
+ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 8.5, width = 8.5)
 
 
 # RQ3: 
@@ -147,19 +160,25 @@ rq3_df = competence_by_round %>% dplyr::filter(skill_origin == "Original 166") %
   dplyr::filter(keep == 1) %>% 
   dplyr::group_by(Mode) %>% 
   dplyr::reframe(n = n()) %>% 
-  dplyr::ungroup()
+  dplyr::ungroup() %>% 
+  dplyr::mutate(
+    pct = round(100*n/97,2), 
+    lbl = paste0(as.character(n), " (",pct,"%)")
+  ) 
+
 
 # Add code here for plot!
 
 plt_rq3 = ggplot(data = rq3_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   geom_bar(stat = 'identity', position = "dodge", alpha = 2/3) +
-  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
-  labs(x = 'Competnecy Needed?', y = element_blank(), title = 'Skill Competency', subtitle = 'Is Competency Needed for the 95 Essential Skills?', color = 'Competency', fill = 'Competency') +
+  geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
+  labs(x = 'Competency Needed?', y = element_blank(), title = 'Skill Competency', subtitle = 'Is Competency Needed for the 95 Essential Skills?', color = 'Competency', fill = 'Competency') +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm
 
-#ggsave(plot = plt_rq3, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq3_plot.png"), height = 8.5, width = 8.5)
+plt_rq3
+ggsave(plot = plt_rq3, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq3_plot.png"), height = 8.5, width = 8.5)
 
 
 
