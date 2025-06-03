@@ -19,9 +19,15 @@ library(tidyverse)
 
 
 # Marcus W. Locations
-root_wd = "C:/Users/waldmanm/"
-onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
+#root_wd = "C:/Users/waldmanm/"
+#onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
+#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
+# Marcus's Home Desktop (White-Rhino)
+root_wd = "C:/Users/marcu"
+onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
 
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))

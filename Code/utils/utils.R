@@ -54,12 +54,27 @@
    dplyr::select(-`Level of Program(s)`) %>% 
    dplyr::mutate(across(where(is.character), factor)) 
 
-      
+  
+   # Download the data dictionary and raw response data  
+   dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
+   raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
+   ## names that do not appear in the demo_data 
+   remove_names = setdiff(tolower(raw$`SYSTEM: Owner Full Name...1`),  tolower(demo_data$name))
+   # # Add the progress to the demo_data
+   # demo_data = demo_data %>% 
+   #   dplyr::left_join(
+   #     raw %>% 
+   #      dplyr::mutate(
+   #         name = tolower(raw$`SYSTEM: Owner Full Name...1`), 
+   #         progress = `SYSTEM: Survey Progress...3`
+   #       ) %>% 
+   #      dplyr::select(name,progress), by = "name"
+   #   )
    
    
    #Get the response data
-   dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
-   raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
+
+
    response_data = get_essential_environment_competence_longdat(raw, dict) %>% 
      dplyr::rename(name = participant) %>% 
      dplyr::mutate(name = tolower(name) %>% as.factor()) %>% 
@@ -67,11 +82,14 @@
      dplyr::filter(skill_origin == "Original 166") %>% 
      dplyr::mutate(category = as.factor(category))
    
+        ## 
+        tmp = raw %>% dplyr::filter(tolower(`SYSTEM: Owner Full Name...1`) %in% setdiff(demo_data$name, response_data$name))
+        tmp = tmp %>% dplyr::select(`SYSTEM: Owner Full Name...1`, `SYSTEM: Survey Progress...3`,dplyr::any_of(names(tmp)[startsWith(names(tmp), "Are the listed psychomotor nursing skills essential")]))
+          #writexl::write_xlsx(tmp, path = file.path(onedrive_wd, "Meeting Memos", "2025-05-28 Follow-up", "raw_response_individuals_not_showing_up_in_my_dataset.xlsx")) 
+          #verified no resopnse data for these individuals!!!
    
    # Join the two
-   setdiff(demo_data$name, response_data$name)
-   message("investiagion needed! why so many names in demo_data but not in response data???")
-  
+
    dat = response_data %>% 
      dplyr::left_join(demo_data, by = "name")
    
