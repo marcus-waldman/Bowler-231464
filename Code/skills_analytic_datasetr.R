@@ -5,6 +5,7 @@ library(readxl)
 library(writexl)
 library(mice)
 library(ggthemes)
+library(ggtext)
 
  root_wd = "C:/Users/waldmanm/"
  onedrive_wd = file.path(root_wd,"The University of Colorado Denver", "Bowler, Fara - March 2023_FB BH SH")
@@ -97,10 +98,10 @@ rq1 = essential_by_round %>%
   dplyr::bind_rows(data.frame(round=4,result="never",n = 166-97)) %>% 
   dplyr::mutate(
     x = factor(round,levels = 1:4, labels = c("1","2","3","Never")),
-    Result = plyr::mapvalues(result, c("n_yes","n_no", "never"), c(2,1,3)) %>% factor(levels = 1:3, labels = c("Nonessential", "Essential", "No consensus"))
+    Result = plyr::mapvalues(result, c("n_yes","n_no", "never"), c(2,1,3)) %>% factor(levels = 1:3, labels = c("Non-Essential", "Essential", "Non consensus"))
   ) %>% 
   dplyr::mutate(
-    pct = round(100*n/97,2), 
+    pct = round(100*n/166,1), 
     lbl = paste0(as.character(n), " (",pct,"%)")
   ) 
 
@@ -109,18 +110,23 @@ thm = ggthemes::theme_few(base_family = "serif", base_size = 16)
 thm$legend.position = "inside"
 thm$legend.direction = "horizontal" 
 thm$legend.justification = c(.75,.99)
+thm$plot.title = element_markdown(hjust = 0, size = 18)
+thm$plot.subtitle = element_markdown(hjust = 0, size = 14)
+thm$legend.text = element_text(size = 15)
+thm$axis.text.x = element_text(size = 15)
+thm$axis.text.y = element_text(size = 15)
 
-
+library(ggtext)
 plt_rq1 = ggplot(data = rq1, aes(x = x, y = n, col = Result, fill = Result)) + 
   geom_bar(stat="identity", position = "dodge", alpha = 2/3) +
   geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
-  labs(title = "Essential Skills", subtitle = "Totals: Nonessential (n=2); Essential (n=95); No consensus (n=69)", x = "Round", y = element_blank()) +
+  labs(title = "<b>Essential Skills</b><br>Is this skill essential to be taught in pre-licensure nursing programs?", subtitle = "Totals (n=166): Non-Essential (n=2); Essential (n=95); Non consensus (n=69)", x = "Round", y = element_blank()) +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm
 
-
-#ggsave(plot = plt_rq1, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "RQ1 Bar Chart.png"), height = 8.5, width = 8.5)
+plt_rq1
+ggsave(plot = plt_rq1, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "RQ1 Bar Chart.png"), height = 9, width = 9)
 
 
 # RQ2: 
@@ -144,13 +150,13 @@ plt_rq2 = ggplot(data = rq2_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   geom_bar(stat="identity", position = "dodge", alpha = 2/3) +
   geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
   scale_y_continuous(limits = c(0, 100)) +
-  labs(title = 'Curriculum Type', y = element_blank()) +
+  labs(title = '<b>Educational Environment</b><br>What is the best teaching enviornment for the psychomotor skill<sup>1</sup>?', subtitle = "*Note*: <sup>1</sup>n=95 Essential Skills only", y = element_blank()) +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm
 
 plt_rq2
-ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 8.5, width = 8.5)
+ggsave(plot = plt_rq2, filename = file.path(onedrive_wd, "Meeting Memos", "2025-05-07 Follow-up", "rq2_plot.png"), height = 9, width = 9)
 
 
 # RQ3: 
@@ -172,7 +178,7 @@ rq3_df = competence_by_round %>% dplyr::filter(skill_origin == "Original 166") %
 plt_rq3 = ggplot(data = rq3_df, aes(x = Mode, y = n, col = Mode, fill = Mode)) +
   geom_bar(stat = 'identity', position = "dodge", alpha = 2/3) +
   geom_text(aes(label=lbl), position=position_dodge(width=0.9), vjust=-0.25, size = 5.25) +
-  labs(x = 'Competency Needed?', y = element_blank(), title = 'Skill Competency', subtitle = 'Is Competency Needed for the 95 Essential Skills?', color = 'Competency', fill = 'Competency') +
+  labs(title = '<b>Skill Competency</b><br>Does competence need to be evaluated for the psychomotor skill<sup>1</sup>?', subtitle = "*Note*: <sup>1</sup>n=95 Essential Skills only", y = element_blank()) +
   ggthemes::scale_color_wsj(guide = "none") +
   ggthemes::scale_fill_wsj() +
   thm

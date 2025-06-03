@@ -3,6 +3,227 @@
 #         Bowler-P231464
 #Authors: M. Waldman; C. Sarabia
 
+
+# Skills Study
+# Demographics
+
+# 
+ demo_and_response_data<-function(onedrive_wd){
+   
+   experience_edu_map = data.frame(
+     labels = c("2-5 years", "6 -10 years", "11 – 15 years", "16 – 20 years",  "21 – 25 years", "26 – 30 years"),
+     values = c(1:6)
+   )
+   
+   experience_rn_map = data.frame(
+     labels = c("2-5 years","6 -10 years","11 – 15 years","16 – 20 years","21 – 25 years","26 – 30 years","31+ years"),
+     values = c(1:7)
+   )
+   
+   age_map = data.frame(
+     labels = c("25 – 30 years of age", "31 – 40 years of age", "41 – 50 years of age", "51 – 60 years of age", "61 – 65 years of age", "Greater than 66 years of age"), 
+     values = c(1:6)
+   )
+   
+   # Obtain the demographics dataset
+   demo_data = demo_graphics_data(onedrive_wd=onedrive_wd) %>% 
+     dplyr::rename(
+       role_primary = `Primary Role`,
+       role_current = `Role Currently Hold`,
+       gender = `Which category do you best identify`, 
+       age = `Age Category`, 
+       region = `What geog. region are you located`, 
+       experience_edu = `How many years have you worked in an educator role`, 
+       experience_rn = `Years experience as a RN`, 
+       expertise = `Primary area of expert.`, 
+       setting = `Clinical Setting`
+      ) %>% 
+    #Clean up ordinal variables
+    dplyr::mutate(
+      experience_edu = plyr::mapvalues(experience_edu, from = experience_edu_map$labels, to = experience_edu_map$values) %>% 
+        ordered(levels =experience_edu_map$values, labels = experience_edu_map$labels), 
+      experience_rn = plyr::mapvalues(experience_rn, from = experience_rn_map$labels, to = experience_rn_map$values) %>% 
+        ordered(levels = experience_rn_map$values, labels = experience_rn_map$labels), 
+      age = plyr::mapvalues(age, from = age_map$labels, to = age_map$values) %>% 
+        ordered(levels = age_map$values, labels = age_map$labels)
+    ) %>% 
+   # Clean up gender
+   dplyr::mutate(
+     gender = ifelse(startsWith(gender,"Prefer"), NA, gender)
+   ) %>% 
+   dplyr::select(-`Level of Program(s)`) %>% 
+   dplyr::mutate(across(where(is.character), factor)) 
+
+  
+   # Download the data dictionary and raw response data  
+   dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
+   raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
+   ## names that do not appear in the demo_data 
+   remove_names = setdiff(tolower(raw$`SYSTEM: Owner Full Name...1`),  tolower(demo_data$name))
+   # # Add the progress to the demo_data
+   # demo_data = demo_data %>% 
+   #   dplyr::left_join(
+   #     raw %>% 
+   #      dplyr::mutate(
+   #         name = tolower(raw$`SYSTEM: Owner Full Name...1`), 
+   #         progress = `SYSTEM: Survey Progress...3`
+   #       ) %>% 
+   #      dplyr::select(name,progress), by = "name"
+   #   )
+   
+   
+   #Get the response data
+
+
+   response_data = get_essential_environment_competence_longdat(raw, dict) %>% 
+     dplyr::rename(name = participant) %>% 
+     dplyr::mutate(name = tolower(name) %>% as.factor()) %>% 
+     dplyr::left_join(varshort_skills(dict=dict), by = "varshort") %>% 
+     dplyr::filter(skill_origin == "Original 166") %>% 
+     dplyr::mutate(category = as.factor(category))
+   
+        ## 
+        tmp = raw %>% dplyr::filter(tolower(`SYSTEM: Owner Full Name...1`) %in% setdiff(demo_data$name, response_data$name))
+        tmp = tmp %>% dplyr::select(`SYSTEM: Owner Full Name...1`, `SYSTEM: Survey Progress...3`,dplyr::any_of(names(tmp)[startsWith(names(tmp), "Are the listed psychomotor nursing skills essential")]))
+          #writexl::write_xlsx(tmp, path = file.path(onedrive_wd, "Meeting Memos", "2025-05-28 Follow-up", "raw_response_individuals_not_showing_up_in_my_dataset.xlsx")) 
+          #verified no resopnse data for these individuals!!!
+   
+   # Join the two
+
+   dat = response_data %>% 
+     dplyr::left_join(demo_data, by = "name")
+   
+   
+   return(dat)
+   
+}
+
+
+
+
+
+demo_graphics_data<- function(onedrive_wd) {
+  
+  library(tidyverse)
+  library(readxl)
+  library(writexl)
+  library(stringr)
+  
+  
+  # Bringin in raw data
+  raw_long <- read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
+  
+  # df with needed columns
+  df <- raw_long |>
+    filter(!is.na(`Please choose your primary role:...24`)) |>
+    dplyr::select(c(1, 24:48, 50:55)) |>
+    dplyr::rename(name = `SYSTEM: Owner Full Name...1`) |>
+    dplyr::mutate(name = tolower(name)) %>% 
+    distinct(name, .keep_all = TRUE)
+  
+  
+  # getting df with 1 column questions
+  main_df <- df |>
+    dplyr::select(c(1, 2, 10:11, 23:24, 26, 25))|>
+    dplyr::rename(
+      `Primary Role` = `Please choose your primary role:...24`,
+      `Which category do you best identify` = `To which category do you best identify?...32`,
+      `Age Category` = `Age category...33`,
+      `What geog. region are you located` = `What geographical region are you located?...45`,
+      `How many years have you worked in an educator role` = `How many years have you worked in an educator role?...48`,
+      `Years experience as a RN` = `How many years experience do you have as a registered nurse?...47`) |>
+    dplyr::mutate(`What geog. region are you located` = ifelse(`What geog. region are you located` == 'International:', paste('Int: ', `What geographical region are you located?...46`), `What geog. region are you located`)) |>
+    dplyr::select(-6)
+  
+  
+  # collapsing columns together for Question 2
+  mult_q2 <- df |>
+    dplyr::select(c(1, 3:8)) |>
+    dplyr::rename(`Clinical Instructor/Academic` = `What role do you currently hold? : Clinical Instructor/Scholar...25`,
+           `Other` = `What role do you currently hold?...26`,
+           `Simulationist` = `What role do you currently hold? : Simulationist...27`,
+           `Clinical Educator/Practice` = `What role do you currently hold? : Clinical educator in the practice setting...28`,
+           `New Grad Res. Coord./Educator` = `What role do you currently hold? : New graduate (residency) coordinator/educator...29`,
+           `Preceptor` = `What role do you currently hold? : Preceptor...30`) |>
+    tidyr::pivot_longer(cols = -name, names_to = 'option', values_to = 'value')
+  
+  q2 <- mult_q2|>
+    dplyr::mutate(option_clean = case_when(
+      option == 'other' & !is.na(value) & value != '' ~ value,
+      option == 'other' ~ NA_character_,
+      value == 'Yes' ~ option,
+      TRUE ~ NA_character_
+    )) |>
+    dplyr::filter(!is.na(option_clean)) |>
+    dplyr::group_by(name) |>
+    dplyr::reframe(`Role Currently Hold` = paste(option_clean, collapse = ', '), .groups = 'drop')
+  
+  
+  # collapsing columns together for Question 5
+  mult_q5 <- df |>
+    dplyr::select(c(1, 12:21))|>
+    dplyr::rename(
+      `OB` = `What is your primary area of clinical expertise?  : OB...34`,
+      `Other` = `What is your primary area of clinical expertise?...35`,
+      `Pediatrics` = `What is your primary area of clinical expertise?  : Peds...36`,
+      `Critical Care` = `What is your primary area of clinical expertise?  : Critical Care...37`,
+      `ED` = `What is your primary area of clinical expertise?  : Emergency department...38`,
+      `Perioperative` = `What is your primary area of clinical expertise?  : Peri-operative...39`,
+      `Ambulatory Care` = `What is your primary area of clinical expertise?  : Ambulatory care...40`,
+      `Medical-Surgical` = `What is your primary area of clinical expertise?  : Medical/surgical...41`,
+      `Population Health` = `What is your primary area of clinical expertise?  : Population health (community)...42`,
+      `Behavioral Health`= `What is your primary area of clinical expertise?  : Behavioral health...43`) |>
+    tidyr::pivot_longer(cols = -name, names_to = 'option', values_to = 'value')
+  
+  q5 <- mult_q5|>
+    dplyr::mutate(option_clean = case_when(
+      option == 'other' & !is.na(value) & value != '' ~ value,
+      option == 'other' ~ NA_character_,
+      value == 'Yes' ~ option,
+      TRUE ~ NA_character_
+    )) |>
+    dplyr::filter(!is.na(option_clean)) |>
+    dplyr::group_by(name) |>
+    dplyr::reframe(`Primary area of expert.` = paste(option_clean, collapse = ', '), .groups = 'drop')
+  
+  
+  # collapsing columns together for Question 9
+  mult_q9 <- df |>
+    dplyr::select(c(1, 27:30))|>
+    dplyr::rename(`ADN` = `If you are at an academic school of nursing, what level of program does your school offer? : ADN...50`,
+           `BSN` = `If you are at an academic school of nursing, what level of program does your school offer? : BSN...51`,
+           `MS` = `If you are at an academic school of nursing, what level of program does your school offer? : MS direct entry       (pre-licensure)...52`,
+           `NA` = `If you are at an academic school of nursing, what level of program does your school offer? : N/A...53`) |>
+    tidyr::pivot_longer(cols = -name, names_to = 'option', values_to = 'value')
+  
+  q9 <- mult_q9 |>
+    dplyr::filter(value == 'Yes') |>
+    dplyr::group_by(name) |>
+    dplyr::reframe(`Level of Program(s)` = paste(option, collapse = ', '), .groups = 'drop')
+  
+  
+  # collapsing columns together for Question 10
+  q10 <- df |>
+    dplyr::select(c(1, 31:32)) |>
+    dplyr::rename(`Clinical Setting` = `If you are at a clinical agency, what kind of setting?...54`) |>
+    dplyr::mutate(`Clinical Setting` = ifelse(`Clinical Setting` == 'Other:', paste('Other: ', `If you are at a clinical agency, what kind of setting?...55`), `Clinical Setting`)) |>
+    dplyr::select(-3)
+  
+  
+  # Joining multiple dfs into one
+  df_1 <- dplyr::left_join(main_df, q2)
+  df_2 <- dplyr::left_join(df_1, q5)
+  df_3 <- dplyr::left_join(df_2, q9)
+  
+  final_demo_df <- dplyr::left_join(df_3, q10)
+  
+  return(final_demo_df)
+}
+
+
+
+
+
 construct_data_dictionary<-function(onedrive_wd){
   library(tidyverse)
   library(readxl)
@@ -496,7 +717,7 @@ get_essential_environment_competence_longdat<-function(raw, dict){
   longdat %>% dplyr::mutate(answered = !is.na(essential)) %>% dplyr::group_by(varshort, round) %>% dplyr::reframe(answered = sum(answered)>0) %>% dplyr::mutate(answered = ifelse(answered==F, NA, answered)) %>% 
     tidyr::pivot_wider(names_from = round, values_from = answered) %>% 
     dplyr::select(-varshort) %>% 
-    md.pattern()
+    mice::md.pattern()
   #Caution! NOTE that there are three items that show up in round 3 but do not show up in rounds 1 and 2
   #Identify which three items
   longdat %>% dplyr::mutate(answered = !is.na(essential)) %>% dplyr::group_by(varshort, round) %>% dplyr::reframe(answered = sum(answered)>0) %>% dplyr::mutate(answered = ifelse(answered==F, NA, answered)) %>% 
