@@ -15,15 +15,33 @@
      values = c(1:6)
    )
    
+   experience_edu_years = data.frame(
+     experience_edu = c(1:6) %>% ordered(levels = experience_edu_map$values, labels = experience_edu_map$labels), 
+     experience_edu_years = c( (2+5)/2, (6+10)/2, (11+15)/2, (16+20)/2, (21+25)/2 ,(26+30)/2 )
+   )
+   
    experience_rn_map = data.frame(
      labels = c("2-5 years","6 -10 years","11 – 15 years","16 – 20 years","21 – 25 years","26 – 30 years","31+ years"),
      values = c(1:7)
    )
    
+   experience_rn_years = data.frame(
+     experience_rn = c(1:6) %>% ordered(levels = experience_rn_map$values, labels = experience_rn_map$labels), 
+     experience_rn_years = c( (2+5)/2, (6+10)/2, (11+15)/2, (16+20)/2, (21+25)/2 ,(26+30)/2 )
+   )
+   
+   
    age_map = data.frame(
      labels = c("25 – 30 years of age", "31 – 40 years of age", "41 – 50 years of age", "51 – 60 years of age", "61 – 65 years of age", "Greater than 66 years of age"), 
      values = c(1:6)
    )
+   
+   age_years = data.frame(
+     age = c(1:6) %>% ordered(levels = age_map$values, labels = age_map$labels), 
+     age_years = c( (25+30)/2, (31+40)/2, (41+50)/2, (51+60)/2, (61+65)/2 , 70 )
+   )
+   
+   
    
    # Obtain the demographics dataset
    demo_data = demo_graphics_data(onedrive_wd=onedrive_wd) %>% 
@@ -52,7 +70,10 @@
      gender = ifelse(startsWith(gender,"Prefer"), NA, gender)
    ) %>% 
    dplyr::select(-`Level of Program(s)`) %>% 
-   dplyr::mutate(across(where(is.character), factor)) 
+   dplyr::mutate(across(where(is.character), factor)) %>% 
+   dplyr::left_join(experience_edu_years, by = "experience_edu" ) %>% 
+   dplyr::left_join(experience_rn_years, by = "experience_rn") %>% 
+   dplyr::left_join(age_years, by = "age")
 
   
    # Download the data dictionary and raw response data  
@@ -60,20 +81,6 @@
    raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
    ## names that do not appear in the demo_data 
    remove_names = setdiff(tolower(raw$`SYSTEM: Owner Full Name...1`),  tolower(demo_data$name))
-   # # Add the progress to the demo_data
-   # demo_data = demo_data %>% 
-   #   dplyr::left_join(
-   #     raw %>% 
-   #      dplyr::mutate(
-   #         name = tolower(raw$`SYSTEM: Owner Full Name...1`), 
-   #         progress = `SYSTEM: Survey Progress...3`
-   #       ) %>% 
-   #      dplyr::select(name,progress), by = "name"
-   #   )
-   
-   
-   #Get the response data
-
 
    response_data = get_essential_environment_competence_longdat(raw, dict) %>% 
      dplyr::rename(name = participant) %>% 
@@ -97,9 +104,6 @@
    return(dat)
    
 }
-
-
-
 
 
 demo_graphics_data<- function(onedrive_wd) {
