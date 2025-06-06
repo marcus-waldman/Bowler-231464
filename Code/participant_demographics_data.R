@@ -32,12 +32,12 @@ demo_graphics_data<- function(onedrive_wd) {
       `How many years have you worked in an educator role` = `How many years have you worked in an educator role?...48`,
       `Years experience as a RN` = `How many years experience do you have as a registered nurse?...47`) |>
     mutate(`What geog. region are you located` = ifelse(`What geog. region are you located` == 'International:', paste('Int: ', `What geographical region are you located?...46`), `What geog. region are you located`)) |>
-    select(-6)
+    dplyr::select(-6)
   
   
   # collapsing columns together for Question 2
   mult_q2 <- df |>
-    select(c(1, 3:8)) |>
+    dplyr::select(c(1, 3:8)) |>
     rename(`Clinical Instructor/Academic` = `What role do you currently hold? : Clinical Instructor/Scholar...25`,
            `Other` = `What role do you currently hold?...26`,
            `Simulationist` = `What role do you currently hold? : Simulationist...27`,
@@ -106,7 +106,7 @@ demo_graphics_data<- function(onedrive_wd) {
     dplyr::select(c(1, 31:32)) |>
     rename(`Clinical Setting` = `If you are at a clinical agency, what kind of setting?...54`) |>
     mutate(`Clinical Setting` = ifelse(`Clinical Setting` == 'Other:', paste('Other: ', `If you are at a clinical agency, what kind of setting?...55`), `Clinical Setting`)) |>
-    select(-3)
+    dplyr::select(-3)
   
   
   # Joining multiple dfs into one
