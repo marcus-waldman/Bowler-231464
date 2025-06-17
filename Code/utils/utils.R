@@ -8,7 +8,17 @@
 # Demographics
 
 # 
- demo_and_response_data<-function(onedrive_wd){
+
+fit_glmer<-function(formula, implist,...){
+  
+  obj_mira <- future.apply::future_lapply(1:length(implist), function(m){
+    do.call("glmer", args = list(formula = formula, data = implist[[m]], family = 'binomial', control = glmerControl(...)))
+  }) %>% mice::as.mira()
+  
+  
+}
+
+ demo_and_response_data<-function(onedrive_wd, return_implist = FALSE){
    
    experience_edu_map = data.frame(
      labels = c("2-5 years", "6 -10 years", "11 – 15 years", "16 – 20 years",  "21 – 25 years", "26 – 30 years"),
@@ -74,8 +84,29 @@
    dplyr::left_join(experience_edu_years, by = "experience_edu" ) %>% 
    dplyr::left_join(experience_rn_years, by = "experience_rn") %>% 
    dplyr::left_join(age_years, by = "age")
+   
+   # Impute the demographics data
+   if(return_implist){
+     
+     toimpute = demo_data %>% data.frame() %>% dplyr::select(role_primary:gender,role_current,expertise:age_years)
+     obj_mice = mice::mice(
+       data = toimpute, 
+       method = "cart", m = 10, seed = 123
+      )
+     
+     demo_implist = lapply(0:10, function(m){
+       if(m==0){
+         df_m = toimpute
+       } else {
+         df_m = complete(obj_mice,m)
+       }
+       
+       return(df_m %>% dplyr::mutate(name = demo_data$name, .imp = m) %>% dplyr::relocate(.imp, name))
+       
+      }) 
+     
+   }
 
-  
    # Download the data dictionary and raw response data  
    dict = construct_data_dictionary(onedrive_wd=onedrive_wd)
    raw = readr::read_rds(file = file.path(onedrive_wd, "Data", "Custom Data Extract - 20240406.rds"))
@@ -90,18 +121,28 @@
      dplyr::mutate(category = as.factor(category))
    
         ## 
-        tmp = raw %>% dplyr::filter(tolower(`SYSTEM: Owner Full Name...1`) %in% setdiff(demo_data$name, response_data$name))
-        tmp = tmp %>% dplyr::select(`SYSTEM: Owner Full Name...1`, `SYSTEM: Survey Progress...3`,dplyr::any_of(names(tmp)[startsWith(names(tmp), "Are the listed psychomotor nursing skills essential")]))
+        #tmp = raw %>% dplyr::filter(tolower(`SYSTEM: Owner Full Name...1`) %in% setdiff(demo_data$name, response_data$name))
+        #tmp = tmp %>% dplyr::select(`SYSTEM: Owner Full Name...1`, `SYSTEM: Survey Progress...3`,dplyr::any_of(names(tmp)[startsWith(names(tmp), "Are the listed psychomotor nursing skills essential")]))
           #writexl::write_xlsx(tmp, path = file.path(onedrive_wd, "Meeting Memos", "2025-05-28 Follow-up", "raw_response_individuals_not_showing_up_in_my_dataset.xlsx")) 
           #verified no resopnse data for these individuals!!!
    
    # Join the two
-
+   
    dat = response_data %>% 
      dplyr::left_join(demo_data, by = "name")
    
+   if(return_implist){
+     implist = lapply(0:10, function(m){
+       dat_m = response_data %>% dplyr::left_join(demo_implist[[m+1]], by = "name") %>% dplyr::relocate(.imp,name,email)
+     })
+   }
    
-   return(dat)
+   if(return_implist){
+     return(implist)
+   } else{
+     return(dat)
+   }
+  
    
 }
 
