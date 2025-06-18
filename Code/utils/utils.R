@@ -9,16 +9,91 @@
 
 # 
 
-fit_glmer<-function(formula, implist,...){
+fit_glm<-function(formula,implist, B, family = "binomial"){
+  
+  tmp_list = future.apply::future_lapply(1:M, function(m){
+    
+    loglikes_m = expand.grid(m=m, b = 0:B) %>% dplyr::mutate(loglik = NA)
+    
+    fit_m = glm2::glm2(
+      formula = formula,
+      family = family, 
+      data = implist[[m]]
+    )
+    
+    J = length(fit_m$coefficients)
+    vars = names(fit_m$coefficients)
+    est_df_m = data.frame(m=m, b = 0, j = 1:J, var = vars, est = fit_m$coefficients, row.names = NULL)
+    
+    loglikes_m$loglik[loglikes_m$b==0] = logLik(fit_m)
+    
+    
+    ests_df_mb = vector(mode = "list", length = B)
+    
+    for(b in 1:B){
+      print(b)
+      fit_mb = glm2::glm2(
+        formula = formula,
+        family = family, 
+        data = implist[[m]], 
+        weights = implist[[m]] %>% purrr::pluck(paste0("wgt",b)), 
+        start = fit_m$coefficients
+      )
+      ests_df_mb[[b]] = data.frame(m=m, b = 0, j = 1:J, var = vars, est = fit_mb$coefficients, row.names = NULL)
+      loglikes_m$loglik[loglikes_m$b==b] = logLik(fit_m)
+    }
+    
+    return(list(loglik = loglikes_m, est_df_m = est_df_m %>% dplyr::bind_rows(ests_df_mb %>% dplyr::bind_rows)))
+    
+    
+  })
+  
+  # out_list = list(
+  #   coefficients = tmp_df %>% dplyr::select(-loglike),
+  #   model.deviance = tmp_df %>% dplyr::group_by(m,b) %>% dplyr::reframe(deviance=-2*loglike[1])
+  # )
+  # 
+  
+}
+
+summary_coefs<-function(coefs){
+  
+  est_df = coefs %>% dplyr::filter(b==0) %>% dplyr::group_by(j) %>% 
+    dplyr::reframe(term = var[1], estimate = mean(est))
+  
+  inference_df = coefs %>% dplyr::filter(b!=0) %>% dplyr::group_by(j) %>% 
+    dplyr::reframe(
+      se = sd(est), 
+      ci_lb = quantile(est, probs = .025), 
+      ci_ub = quantile(est, probs = .975), 
+    )
+  
+  pvalue_df = coefs %>% dplyr::left_join(est_df %>% dplyr::select(-term), by = "j") %>% 
+    dplyr::group_by(j) %>% 
+    dplyr::reframe(
+      estimate = estimate[1], 
+      p.value = 2*min(mean(est<0), mean(est>0))
+    ) %>% dplyr::select(-estimate)
+  
+  summary_df = est_df %>% 
+    dplyr::left_join(inference_df, by = "j") %>% 
+    dplyr::left_join(pvalue_df, by = "j") %>% 
+    dplyr::arrange(j)
+  
+  
+  return(summary_df)
+}
+
+fit_glmer<-function(formula, implist, nAGQ = 1,...){
   
   obj_mira <- future.apply::future_lapply(1:length(implist), function(m){
-    do.call("glmer", args = list(formula = formula, data = implist[[m]], family = 'binomial', control = glmerControl(...)))
+    do.call("glmer", args = list(formula = formula, data = implist[[m]], family = 'binomial', nAGQ = nAGQ, control = glmerControl(...)))
   }) %>% mice::as.mira()
   
   
 }
 
- demo_and_response_data<-function(onedrive_wd, return_implist = FALSE){
+demo_and_response_data<-function(onedrive_wd, M = 0){
    
    experience_edu_map = data.frame(
      labels = c("2-5 years", "6 -10 years", "11 – 15 years", "16 – 20 years",  "21 – 25 years", "26 – 30 years"),
@@ -85,16 +160,17 @@ fit_glmer<-function(formula, implist,...){
    dplyr::left_join(experience_rn_years, by = "experience_rn") %>% 
    dplyr::left_join(age_years, by = "age")
    
+   
    # Impute the demographics data
-   if(return_implist){
+   if(M > 0){
      
      toimpute = demo_data %>% data.frame() %>% dplyr::select(role_primary:gender,role_current,expertise:age_years)
      obj_mice = mice::mice(
        data = toimpute, 
-       method = "cart", m = 10, seed = 123
+       method = "cart", m = M, seed = 123
       )
      
-     demo_implist = lapply(0:10, function(m){
+     demo_implist = lapply(0:M, function(m){
        if(m==0){
          df_m = toimpute
        } else {
@@ -131,13 +207,13 @@ fit_glmer<-function(formula, implist,...){
    dat = response_data %>% 
      dplyr::left_join(demo_data, by = "name")
    
-   if(return_implist){
-     implist = lapply(0:10, function(m){
+   if(M > 0){
+     implist = lapply(0:M, function(m){
        dat_m = response_data %>% dplyr::left_join(demo_implist[[m+1]], by = "name") %>% dplyr::relocate(.imp,name,email)
      })
    }
    
-   if(return_implist){
+   if(M > 0){
      return(implist)
    } else{
      return(dat)
