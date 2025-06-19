@@ -8,18 +8,26 @@ library(lme4)
 library(lmtest)
 library(future)
 library(future.apply)
+library(doFuture)
 
 library(sjPlot)
 library(sjmisc)
 library(sjlabelled)
 library(mice)
-library(broom.mixed)
 library(brms)
 
 library(glm2)
 
 
-plan(strategy="multisession", workers = 8)
+library(marginaleffects)  # For predictions()
+library(MASS)             # For ginv()
+library(multiwayvcov)
+
+library(glmnet)
+
+
+plan(strategy="multisession", workers = future::availableCores())
+options(future.globals.maxSize = 128 * 1024^3)
 
 # Cristian'S Windows
 #root_wd = "C:/Users/sarabiac"
@@ -33,18 +41,23 @@ plan(strategy="multisession", workers = 8)
 
 
 # Marcus W. Locations
-root_wd = "C:/Users/waldmanm/"
-onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
-github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+#root_wd = "C:/Users/waldmanm/"
+#onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
+#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
 # Marcus's Home Desktop (White-Rhino) 
 #root_wd = "C:/Users/marcu"
 #onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 #github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
+# CSPH-Biostats Cluster
+root_wd = "/biostats_share/waldmanm"
+onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
+github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))
+source(file.path(github_wd, "Code", "utils", "glm2_multiway.R"))
 
 # Load in analytic dataset
 M = 10
@@ -99,17 +112,18 @@ implist =pbapply::pblapply(1:M, function(m){
    dat_m = dat_m %>% dplyr::left_join(demo_dat %>% dplyr::select(-(edu_years:age_years)), by = "name")
     
   
-  # Add in the multilevel-bootstrapped weights
-  N = length(unique(dat_m$name))
-  W = N*brms::rdirichlet(B, rep(1,N)) %>% t() %>% data.frame()
-  names(W) = paste0("wgt", 1:B)
-  weights_df = data.frame(name = unique(dat_m$name)) %>% 
-    dplyr::mutate(wgt = 1) %>% 
-    dplyr::bind_cols(W)
-  dat_m = dat_m %>% dplyr::left_join(weights_df, by = "name")
-  # Ensure weights sum to number of rows
-  dat_m = dat_m %>% dplyr::mutate(across(starts_with("wgt"), .fns = function(w){w/mean(w)}))
-  
+   
+  # # Add in the multilevel-bootstrapped weights
+  # N = length(unique(dat_m$name))
+  # W = N*brms::rdirichlet(B, rep(1,N)) %>% t() %>% data.frame()
+  # names(W) = paste0("wgt", 1:B)
+  # weights_df = data.frame(name = unique(dat_m$name)) %>% 
+  #   dplyr::mutate(wgt = 1) %>% 
+  #   dplyr::bind_cols(W)
+  # dat_m = dat_m %>% dplyr::left_join(weights_df, by = "name")
+  # # Ensure weights sum to number of rows
+  # dat_m = dat_m %>% dplyr::mutate(across(starts_with("wgt"), .fns = function(w){w/mean(w)}))
+  # 
   
   # Turn essential into a 0/1 variable
   dat_m = dat_m %>% dplyr::mutate(essential = as.integer(essential=="Yes"))
@@ -117,6 +131,143 @@ implist =pbapply::pblapply(1:M, function(m){
   
   return(dat_m)
 })
+
+
+
+
+
+  
+  
+                 
+  
+
+skill_categories = unique(implist[[1]]$category) %>% as.character()
+K = length(skill_categories)
+# Create main effects template
+main_effects_template <-  list(
+  role_primary = list( formula = essential~category+role_primary, wald.variables = "role_primary", fit = NULL), 
+  gender = list( formula = essential~category+gender, wald.variables = "gender", fit = NULL), 
+  age_years = list( formula = essential~category+age_years, wald.variables = "age_years", fit = NULL), 
+  edu_years = list( formula = essential~category+edu_years, wald.variables = "edu_years", fit = NULL), 
+  rn_years = list( formula = essential ~ category+rn_years, wald.variables = "rn_years", fit = NULL), 
+  expertise = list( formula = essential ~ category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics, 
+                    wald.variables = c("Medical_Surgical", "Population_Health", "Behavioral_Health", "Critical_Care", "ED", "Perioperative", "OB", "Pediatrics"), 
+                    fit = NULL), 
+  role_current = list( formula = essential ~ cateogry + New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist, 
+                       wald.variables = c("New_Grad_Res_Coord_Educator", "Clinical_Instructor_Academic", "Preceptor", "Simulationist"), 
+                       fit = NULL)
+)
+P = length(main_effects_template)
+covariates = names(main_effects_template)
+
+#Create a one-way interactions template template
+one_way_interactions_template <-  list(
+  role_primary = list( formula = essential~category*role_primary, wald.variables = "role_primary", fit = NULL), 
+  gender = list( formula = essential~category*gender, wald.variables = "gender", fit = NULL), 
+  age_years = list( formula = essential~category*age_years, wald.variables = "age_years", fit = NULL), 
+  edu_years = list( formula = essential~category*edu_years, wald.variables = "edu_years", fit = NULL), 
+  rn_years = list( formula = essential ~ category*rn_years, wald.variables = "rn_years", fit = NULL), 
+  expertise = list( formula = essential ~ category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics, 
+                    wald.variables = c("Medical_Surgical", "Population_Health", "Behavioral_Health", "Critical_Care", "ED", "Perioperative", "OB", "Pediatrics"), 
+                    fit = NULL), 
+  role_current = list( formula = essential ~ category*New_Grad_Res_Coord_Educator + category*Clinical_Instructor_Academic + category*Preceptor + category*Simulationist, 
+                       wald.variables = c("New_Grad_Res_Coord_Educator", "Clinical_Instructor_Academic", "Preceptor", "Simulationist"), 
+                       fit = NULL)
+)
+
+
+
+# Initialie fits list Fits by category
+fits_list = list(main_effects = main_effects_template, one_way_interactions = one_way_interactions_template)
+
+
+main_effect_fits = lapply(1:P, function(p){
+  fit_kj = pool_glm2_multiway(formula =  fits_list$main_effects[[covariates[p]]]$formula, 
+                              imputed_list = implist, 
+                              cluster_vars = c("name"))
+  return(fit_kj)
+})
+
+tab_model(main_effect_fits[[1]], main_effect_fits[[2]], main_effect_fits[[3]], main_effect_fits[[4]], main_effect_fits[[5]], main_effect_fits[[6]], main_effect_fits[[7]])
+
+
+
+
+one_way_fits = lapply(1:P, function(p){
+  fit_kj = pool_glm2_multiway(formula =  fits_list$one_way_interactions[[covariates[p]]]$formula, 
+                              imputed_list = implist, 
+                              cluster_vars = c("name"))
+  return(fit_kj)
+})
+
+tab_model(one_way_fits[[1]], one_way_fits[[2]], one_way_fits[[3]], one_way_fits[[4]], one_way_fits[[5]], one_way_fits[[6]], one_way_fits[[7]])
+
+
+
+
+for(k in 1:K){
+  jx = 1
+  fit_kj = pool_glm2_multiway(formula =  fits_list[[k]]$main_effects[[jx]]$formula, 
+                              imputed_list = lapply(1:M, function(m){implist[[m]] %>% dplyr::filter(category == skill_categories[k])}), 
+                              cluster_vars = c("name"))
+  print("\n")
+  print(fit_kj$results)
+}
+
+
+
+
+####
+
+longimp = implist %>% dplyr::bind_rows() %>% 
+  dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name")
+
+
+x.formula = ~ -1 + category*role_primary*gender + category*role_primary*age_years + category*role_primary*edu_years + category*role_primary*rn_years +
+  category*role_primary*Medical_Surgical + category*role_primary*Population_Health + category*role_primary*Behavioral_Health + category*role_primary*Critical_Care + category*role_primary*ED + category*role_primary*Perioperative + category*role_primary*OB + category*role_primary*Pediatrics +
+  category*role_primary*New_Grad_Res_Coord_Educator + category*role_primary*Clinical_Instructor_Academic + category*role_primary*Preceptor + category*role_primary*Simulationist +
+  category*gender*age_years + category*gender*edu_years + category*gender*rn_years +
+  category*gender*Medical_Surgical + category*gender*Population_Health + category*gender*Behavioral_Health + category*gender*Critical_Care + category*gender*ED + category*gender*Perioperative + category*gender*OB + category*gender*Pediatrics +
+  category*gender*New_Grad_Res_Coord_Educator + category*gender*Clinical_Instructor_Academic + category*gender*Preceptor + category*gender*Simulationist +
+  category*age_years*edu_years + category*age_years*rn_years +
+  category*age_years*Medical_Surgical + category*age_years*Population_Health + category*age_years*Behavioral_Health + category*age_years*Critical_Care + category*age_years*ED + category*age_years*Perioperative + category*age_years*OB + category*age_years*Pediatrics +
+  category*age_years*New_Grad_Res_Coord_Educator + category*age_years*Clinical_Instructor_Academic + category*age_years*Preceptor + category*age_years*Simulationist +
+  category*edu_years*rn_years +
+  category*edu_years*Medical_Surgical + category*edu_years*Population_Health + category*edu_years*Behavioral_Health + category*edu_years*Critical_Care + category*edu_years*ED + category*edu_years*Perioperative + category*edu_years*OB + category*edu_years*Pediatrics +
+  category*edu_years*New_Grad_Res_Coord_Educator + category*edu_years*Clinical_Instructor_Academic + category*edu_years*Preceptor + category*edu_years*Simulationist +
+  category*Medical_Surgical*New_Grad_Res_Coord_Educator +  category*Medical_Surgical*Clinical_Instructor_Academic +  category*Medical_Surgical*Preceptor +  category*Medical_Surgical*Simulationist +
+  category*Population_Health*New_Grad_Res_Coord_Educator +  category*Population_Health*Clinical_Instructor_Academic +  category*Population_Health*Preceptor +  category*Population_Health*Simulationist +
+  category*Behavioral_Health*New_Grad_Res_Coord_Educator +  category*Behavioral_Health*Clinical_Instructor_Academic +  category*Behavioral_Health*Preceptor +  category*Behavioral_Health*Simulationist +
+  category*Critical_Care*New_Grad_Res_Coord_Educator +  category*Critical_Care*Clinical_Instructor_Academic +  category*Critical_Care*Preceptor +  category*Critical_Care*Simulationist +
+  category*ED*New_Grad_Res_Coord_Educator +  category*ED*Clinical_Instructor_Academic +  category*ED*Preceptor +  category*ED*Simulationist +
+  category*Perioperative*New_Grad_Res_Coord_Educator +  category*Perioperative*Clinical_Instructor_Academic +  category*Perioperative*Preceptor +  category*Perioperative*Simulationist +
+  category*OB*New_Grad_Res_Coord_Educator +  category*OB*Clinical_Instructor_Academic +  category*OB*Preceptor +  category*OB*Simulationist +
+  category*Pediatrics*New_Grad_Res_Coord_Educator +  category*Pediatrics*Clinical_Instructor_Academic +  category*Pediatrics*Preceptor +  category*Pediatrics*Simulationist
+
+
+
+
+
+registerDoFuture()
+fit_cv = glmnet::cv.glmnet(
+  x = model.matrix(x.formula, data = longimp), 
+  y = longimp$essential, 
+  family = "binomial", 
+  alpha = 1,
+  foldid = longimp$fid, 
+  intercept = T, 
+  standardize = T, 
+  trace.it = T, 
+  parallel = T
+)
+
+
+
+fit = pool_glm2_multiway(formula = essential ~ Medical_Surgical*category + Population_Health*category + Behavioral_Health*category + Critical_Care*category + ED*category + Perioperative*category + OB*category+ Pediatrics*category, imputed_list = implist, cluster_vars = "name")
+tab_model(fit)
+
+
+
 
 
 #-------------------------------------------------------------------------------

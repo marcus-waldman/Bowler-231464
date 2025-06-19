@@ -9,6 +9,20 @@
 
 # 
 
+get_mode <- function(x) {
+  if (!is.factor(x) && !is.character(x)) {
+    stop("Input must be a factor or character vector.")
+  }
+  
+  freq_table <- table(x)
+  max_count <- max(freq_table)
+  modes <- names(freq_table)[freq_table == max_count]
+  
+  # Return the first mode based on its earliest appearance in x
+  first_mode <- modes[which.min(match(modes, x))]
+  return(first_mode)
+}
+
 fit_glm<-function(formula,implist, B, family = "binomial"){
   
   tmp_list = future.apply::future_lapply(1:M, function(m){
@@ -349,8 +363,7 @@ construct_data_dictionary<-function(onedrive_wd){
   library(tidyverse)
   library(readxl)
   library(writexl)
-  library(raster)
-  
+
   raw <- read_xlsx(path =file.path(onedrive_wd,'Data','Data Dictionary','Dictionary - Custom Data Extract - 20240406.xlsx'))
   
   # Updating the skills section
@@ -421,7 +434,7 @@ construct_data_dictionary<-function(onedrive_wd){
           dplyr::filter(category1 %in% c("Hygiene","Skin Integrity and Wound Care"))  %>% 
           dplyr::group_by(skill) %>% 
           dplyr::reframe(n_categories = length(unique(category1)), 
-                         modal_category = raster::modal(category1)) %>% 
+                         modal_category = get_mode(category1)) %>% 
           dplyr::arrange(desc(n_categories))
         # skill                                                                 n_categories modal_category               
         # <chr>                                                                        <int> <chr>                        
