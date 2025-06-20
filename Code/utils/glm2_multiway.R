@@ -16,10 +16,15 @@ pool_glm2_multiway <- function(formula, imputed_list, cluster_vars, family = bin
   imputed_models <- vector("list", m)
   
   data_used <- imputed_list[[1]]
+  fit_1 = glm2::glm2(formula, data = imputed_list[[1]], family = family)
   
   for (i in seq_along(imputed_list)) {
     data_i <- imputed_list[[i]]
-    fit_i  <- glm2::glm2(formula, data = data_i, family = family)
+    if(i == 1){ 
+      fit_i = fit_1
+    } else {
+      fit_i  <- glm2::glm2(formula, data = data_i, family = family, start = coef(fit_1))
+    }
     imputed_models[[i]] <- fit_i
     coef_list[[i]]      <- stats::coef(fit_i)
     vcov_list[[i]]      <- multiwayvcov::cluster.vcov(fit_i,
