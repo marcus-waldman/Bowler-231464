@@ -119,6 +119,7 @@ implist =pbapply::pblapply(1:M, function(m){
   
   return(dat_m)
 })
+skill_categories = unique(implist[[1]]$category) %>% as.character()
 
 ### CART 
 longimp = implist %>% dplyr::bind_rows() %>% 
@@ -127,36 +128,49 @@ longimp = implist %>% dplyr::bind_rows() %>%
 
 # Create custom folds using the foldid column
 registerDoFuture()
-folds <- lapply(1:max(longimp$fid), function(f) which(longimp$fid == f))
-names(folds) <- paste0("Fold", 1:max(longimp$fid))
 
-# Set up caret training using parallel CV
-train_control <- trainControl(
-  method = "cv",
-  number = length(folds),
-  indexOut = folds,
-  allowParallel = TRUE
-)
+K=length(skill_categories)
+for(k in 1:K){
+  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k])
+  folds_k <- lapply(1:max(longimp_k$fid), function(f) which(longimp_k$fid == f))
+  names(folds_k) <- paste0("Fold", 1:max(longimp_k$fid))
+  
+  # Set up caret training using parallel CV
+  train_control_k <- trainControl(
+    method = "cv",
+    number = length(folds_k),
+    indexOut = folds_k,
+    allowParallel = TRUE
+  )
+  
+  # Train the CART model
+  set.seed(456)
+  cart_model_k <- caret::train(
+    essential~role_primary+gender+age_years+edu_years+rn_years +
+      Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
+      New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
+    data = longimp_k,
+    method = "rpart",
+    trControl = train_control_k,
+    tuneLength = 10
+  )
+  
+  print(cart_model_k)
+  
+  
+  setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
+  pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
+  rpart.plot(cart_model_k$finalModel)
+  dev.off()
+  
+}
 
 
-# Train the CART model
-set.seed(456)
-cart_model <- caret::train(
-  essential~category+role_primary+gender+age_years+edu_years+rn_years +
-            Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
-            New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-  data = longimp,
-  method = "rpart",
-  trControl = train_control,
-  tuneLength = 10
-)
 
-print(cart_model)
 
-setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
-pdf(file = "cart_plot.png", width = 14, height = 10)
-rpart.plot(cart_model$finalModel)
-dev.off()
+
+
+
 
 ###
 # Baseline Model
@@ -166,7 +180,6 @@ baseline$D1 = Wald(baseline$fit, terms = "category")
 
 
 # Main Effects Models
-skill_categories = unique(implist[[1]]$category) %>% as.character()
 K = length(skill_categories)
 main_effects <-  list(
   role_primary = list( formula = essential~category+role_primary, wald.comparison = NULL, fit = NULL, D1 = NULL), 
