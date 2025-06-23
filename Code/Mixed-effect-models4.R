@@ -25,6 +25,10 @@ library(multiwayvcov)
 
 library(glmnet)
 
+library(caret)
+library(rpart)
+library(rpart.plot)
+
 
 plan(strategy="multisession", workers = future::availableCores())
 options(future.globals.maxSize = 128 * 1024^3)
@@ -116,6 +120,45 @@ implist =pbapply::pblapply(1:M, function(m){
   return(dat_m)
 })
 
+### CART 
+longimp = implist %>% dplyr::bind_rows() %>% 
+  dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name") %>% 
+  dplyr::mutate(essential = ifelse(essential==1,"Yes","No") %>% as.factor)
+
+# Create custom folds using the foldid column
+registerDoFuture()
+folds <- lapply(1:max(longimp$fid), function(f) which(longimp$fid == f))
+names(folds) <- paste0("Fold", 1:max(longimp$fid))
+
+# Set up caret training using parallel CV
+train_control <- trainControl(
+  method = "cv",
+  number = length(folds),
+  indexOut = folds,
+  allowParallel = TRUE
+)
+
+
+# Train the CART model
+set.seed(456)
+cart_model <- caret::train(
+  essential~category+role_primary+gender+age_years+edu_years+rn_years +
+            Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
+            New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
+  data = longimp,
+  method = "rpart",
+  trControl = train_control,
+  tuneLength = 10
+)
+
+print(cart_model)
+
+setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
+pdf(file = "cart_plot.png", width = 14, height = 10)
+rpart.plot(cart_model$finalModel)
+dev.off()
+
+###
 # Baseline Model
 baseline <- list(formula = essential~category, wald.variables = "category", fit = NULL, D1 = NULL)
 baseline$fit = pool_glm2_multiway(formula = essential ~ category, imputed_list = implist, cluster_vars = "name")
