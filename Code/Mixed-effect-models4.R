@@ -1,5 +1,9 @@
 rm(list = ls())
 
+# if (!require("BiocManager", quietly = TRUE)) {install.packages("BiocManager")}
+# BiocManager::install("ggtree")
+
+
 # Skills Study
 # Creating Analytic Data Set
 
@@ -28,6 +32,46 @@ library(glmnet)
 library(caret)
 library(rpart)
 library(rpart.plot)
+library(ggtree)
+library(ape)
+
+# Convert rpart to phylo
+as.phylo.rpart <- function(tree) {
+  if (!inherits(tree, "rpart")) stop("Input must be an rpart object")
+  
+  # Get structure of the tree
+  frame <- tree$frame
+  nodes <- as.numeric(rownames(frame))
+  is_leaf <- frame$var == "<leaf>"
+  
+  # Assign labels to terminal nodes
+  tip_labels <- as.character(frame$yval[is_leaf])
+  names(tip_labels) <- nodes[is_leaf]
+  
+  # Build edge matrix
+  edges <- matrix(ncol = 2, nrow = 0)
+  for (i in nodes[!is_leaf]) {
+    left <- i * 2
+    right <- i * 2 + 1
+    edges <- rbind(edges, c(i, left), c(i, right))
+  }
+  
+  # Reindex nodes to match ape::phylo expectations
+  node_map <- setNames(seq_along(unique(as.vector(edges))), unique(as.vector(edges)))
+  edges_mapped <- apply(edges, 2, function(x) node_map[as.character(x)])
+  
+  # Create phylo object
+  library(ape)
+  phy <- list(
+    edge = matrix(edges_mapped, ncol = 2),
+    tip.label = tip_labels[as.character(nodes[is_leaf])],
+    Nnode = sum(!is_leaf)
+  )
+  class(phy) <- "phylo"
+  attr(phy, "rooted") <- TRUE  
+  
+  return(phy)
+}
 
 
 plan(strategy="multisession", workers = future::availableCores())
@@ -131,9 +175,12 @@ registerDoFuture()
 
 K=length(skill_categories)
 for(k in 1:K){
-  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k])
-  folds_k <- lapply(1:max(longimp_k$fid), function(f) which(longimp_k$fid == f))
-  names(folds_k) <- paste0("Fold", 1:max(longimp_k$fid))
+  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k]) %>% dplyr::mutate(id= 1:n())
+  grid_k = expand.grid(fid = unique(longimp_k$fid), varshort =  unique(longimp_k$varshort))
+  folds_k <- lapply(1:nrow(grid_k), 
+                    function(x){longimp_k %>% dplyr::filter(fid==grid_k$fid[x], varshort == grid_k$varshort[x]) %>% purrr::pluck("id")}
+                  )
+  names(folds_k) <- paste0("Fold", 1:nrow(grid_k))
   
   # Set up caret training using parallel CV
   train_control_k <- trainControl(
@@ -152,7 +199,8 @@ for(k in 1:K){
     data = longimp_k,
     method = "rpart",
     trControl = train_control_k,
-    tuneLength = 10
+    tuneLength = 10#,
+    #tuneGrid = data.frame(cp = c(.00001))
   )
   
   print(cart_model_k)
@@ -160,7 +208,7 @@ for(k in 1:K){
   
   setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
   pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
-  rpart.plot(cart_model_k$finalModel)
+  rpart.plot(cart_model_k$finalModel, type = 4, fallen.leaves = F, extra = "auto")
   dev.off()
   
 }
