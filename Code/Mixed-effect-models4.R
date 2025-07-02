@@ -1,7 +1,7 @@
 rm(list = ls())
 
-# if (!require("BiocManager", quietly = TRUE)) {install.packages("BiocManager")}
-# BiocManager::install("ggtree")
+ #if (!require("BiocManager", quietly = TRUE)) {install.packages("BiocManager")}
+ #BiocManager::install("ggtree")
 
 
 # Skills Study
@@ -94,14 +94,14 @@ options(future.globals.maxSize = 128 * 1024^3)
 #github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
 # Marcus's Home Desktop (White-Rhino) 
-#root_wd = "C:/Users/marcu"
-#onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
-#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
-
-# CSPH-Biostats Cluster
-root_wd = "/biostats_share/waldmanm"
+root_wd = "C:/Users/marcu"
 onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
+# CSPH-Biostats Cluster
+#root_wd = "/biostats_share/waldmanm"
+#onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
+#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))
@@ -151,76 +151,26 @@ implist =pbapply::pblapply(1:M, function(m){
   demo_dat = dat_m %>% 
     dplyr::group_by(name) %>% 
     dplyr::reframe(edu_years = edu_years[1], rn_years = rn_years[1], age_years = age_years[1]) %>% 
-    dplyr::mutate(z_edu_years = (edu_years - mean(edu_years, na.rm = T))/sd(edu_years, na.rm = T) ) %>% 
-    dplyr::mutate(z_rn_years = (rn_years - mean(rn_years, na.rm = T))/sd(rn_years, na.rm = T) ) %>% 
-    dplyr::mutate(z_age_years = (age_years - mean(age_years, na.rm = T))/sd(age_years, na.rm = T) )
-   dat_m = dat_m %>% dplyr::left_join(demo_dat %>% dplyr::select(-(edu_years:age_years)), by = "name")
+    dplyr::mutate(edu_years = (edu_years - mean(edu_years, na.rm = T))/10 ) %>% 
+    dplyr::mutate(rn_years = (rn_years - mean(rn_years, na.rm = T))/10 ) %>% 
+    dplyr::mutate(age_years = (age_years - mean(age_years, na.rm = T))/10 )
+  
+   dat_m = dat_m %>% 
+     dplyr::select(-edu_years, -rn_years, -age_years) %>% 
+     dplyr::left_join(demo_dat %>% dplyr::select(name, edu_years,rn_years,age_years), by = "name")
     
   # Turn essential into a 0/1 variable
   dat_m = dat_m %>% dplyr::mutate(essential = as.integer(essential=="Yes"))
   
-  #
+  # Let's add reference categories
+  dat_m$role_primary = relevel(dat_m$role_primary, ref = "Academic Clinical Expert")
+  dat_m$gender = relevel(dat_m$gender, ref = "Female")
   
   return(dat_m)
 })
 skill_categories = unique(implist[[1]]$category) %>% as.character()
 
-### CART 
-longimp = implist %>% dplyr::bind_rows() %>% 
-  dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name") %>% 
-  dplyr::mutate(essential = ifelse(essential==1,"Yes","No") %>% as.factor)
 
-# Create custom folds using the foldid column
-registerDoFuture()
-
-K=length(skill_categories)
-for(k in 1:K){
-  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k]) %>% dplyr::mutate(id= 1:n())
-  grid_k = expand.grid(fid = unique(longimp_k$fid), varshort =  unique(longimp_k$varshort))
-  folds_k <- lapply(1:nrow(grid_k), 
-                    function(x){longimp_k %>% dplyr::filter(fid==grid_k$fid[x], varshort == grid_k$varshort[x]) %>% purrr::pluck("id")}
-                  )
-  names(folds_k) <- paste0("Fold", 1:nrow(grid_k))
-  
-  # Set up caret training using parallel CV
-  train_control_k <- trainControl(
-    method = "cv",
-    number = length(folds_k),
-    indexOut = folds_k,
-    allowParallel = TRUE
-  )
-  
-  # Train the CART model
-  set.seed(456)
-  cart_model_k <- caret::train(
-    essential~role_primary+gender+age_years+edu_years+rn_years +
-      Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
-      New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-    data = longimp_k,
-    method = "rpart",
-    trControl = train_control_k,
-    tuneLength = 10#,
-    #tuneGrid = data.frame(cp = c(.00001))
-  )
-  
-  print(cart_model_k)
-  
-  
-  setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
-  pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
-  rpart.plot(cart_model_k$finalModel, type = 4, fallen.leaves = F, extra = "auto")
-  dev.off()
-  
-}
-
-
-
-
-
-
-
-
-###
 # Baseline Model
 baseline <- list(formula = essential~category, wald.variables = "category", fit = NULL, D1 = NULL)
 baseline$fit = pool_glm2_multiway(formula = essential ~ category, imputed_list = implist, cluster_vars = "name")
@@ -290,7 +240,7 @@ wald_notes<-function(wald){
 }
 
 wd_current = getwd()
-setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
+setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-25 Follow-up"))
 for(p in 1:P){
   pvals = paste0("M1 vs. M0: ", wald_notes(main_effects[[p]]$D1),"; M2 vs. M1: ", wald_notes(one_way_interactions[[p]]$D1))
   tab_model(
@@ -301,6 +251,15 @@ for(p in 1:P){
     file = paste0(covariates[p],"-coefficients-table.html")
   )
 }
+
+
+
+
+
+
+
+
+
 
 ####
 
@@ -347,5 +306,53 @@ tab_model(fit)
 
 
 
+
+### CART 
+longimp = implist %>% dplyr::bind_rows() %>% 
+  dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name") %>% 
+  dplyr::mutate(essential = ifelse(essential==1,"Yes","No") %>% as.factor)
+
+# Create custom folds using the foldid column
+registerDoFuture()
+
+K=length(skill_categories)
+for(k in 1:K){
+  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k]) %>% dplyr::mutate(id= 1:n())
+  grid_k = expand.grid(fid = unique(longimp_k$fid), varshort =  unique(longimp_k$varshort))
+  folds_k <- lapply(1:nrow(grid_k), 
+                    function(x){longimp_k %>% dplyr::filter(fid==grid_k$fid[x], varshort == grid_k$varshort[x]) %>% purrr::pluck("id")}
+  )
+  names(folds_k) <- paste0("Fold", 1:nrow(grid_k))
+  
+  # Set up caret training using parallel CV
+  train_control_k <- trainControl(
+    method = "cv",
+    number = length(folds_k),
+    indexOut = folds_k,
+    allowParallel = TRUE
+  )
+  
+  # Train the CART model
+  set.seed(456)
+  cart_model_k <- caret::train(
+    essential~role_primary+gender+age_years+edu_years+rn_years +
+      Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
+      New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
+    data = longimp_k,
+    method = "rpart",
+    trControl = train_control_k,
+    tuneLength = 10#,
+    #tuneGrid = data.frame(cp = c(.00001))
+  )
+  
+  print(cart_model_k)
+  
+  
+  setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
+  pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
+  rpart.plot(cart_model_k$finalModel, type = 4, fallen.leaves = F, extra = "auto")
+  dev.off()
+  
+}
 
 

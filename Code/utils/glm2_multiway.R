@@ -9,6 +9,7 @@ Wald <- function(object, ...) {
 # Main pooling function: pool_glm2_multiway
 # -----------------------------
 pool_glm2_multiway <- function(formula, imputed_list, cluster_vars, family = binomial()) {
+  
   m <- length(imputed_list)
   
   coef_list     <- vector("list", m)
@@ -34,16 +35,17 @@ pool_glm2_multiway <- function(formula, imputed_list, cluster_vars, family = bin
   coef_mat    <- do.call(rbind, coef_list)
   pooled_coef <- colMeans(coef_mat)
   
-  U_mat    <- sapply(vcov_list, function(mat) diag(mat))
-  U_bar    <- rowMeans(U_mat)
-  B        <- apply(coef_mat, 2, stats::var)
-  total_var <- U_bar + (1 + 1/m) * B
-  pooled_se <- sqrt(total_var)
+  U_sum    <- vcov_list[[1]]
+  for(i in 2:m){U_sum = U_sum + vcov_list[[m]]}
+  U_bar    <- U_sum/m #Eqn 2.18 van Buuren (2018)
+  B        <- cov(coef_mat) #Eqn 2.19 van Buuren (2018) #apply(coef_mat, 2, stats::var)
+  total_var <- U_bar + (1 + 1/m) * B #Eqn 10.14 Little & Rubin (2002) also eqn 2.20 van Buuren (2018)
+  pooled_se <- sqrt(diag(total_var))
   
   t_stat   <- pooled_coef / pooled_se
   df       <- sapply(seq_along(pooled_coef), function(j) {
     if (B[j] == 0) Inf
-    else (m-1) * (1 + U_bar[j]/((1 + 1/m)*B[j]))^2
+    else (m-1) * ( 1 + U_bar[j,j]/((1 + 1/m)*B[j,j]) )^2  #Equivalent to Eqn 10.15 Little & Rubin (2002)
   })
   p_values <- 2 * (1 - stats::pt(abs(t_stat), df))
   
@@ -55,7 +57,7 @@ pool_glm2_multiway <- function(formula, imputed_list, cluster_vars, family = bin
     stringsAsFactors = FALSE
   )
   
-  pooled_vcov <- diag(total_var)
+  pooled_vcov <- diag(diag(total_var))
   colnames(pooled_vcov) <- names(pooled_coef)
   rownames(pooled_vcov) <- names(pooled_coef)
   
@@ -182,18 +184,27 @@ Wald.pooled_cluster_robust_glm2_model <- function(object, terms, ...) {
   }
   
   b_test       <- object$pooled_coef[found]
-  U_bar_sub    <- object$U_bar[found]
-  B_sub        <- object$B[found]
+  
+  ids = which(names(object$pooled_coef) %in% found)
+  k = length(ids)
+  
+  U_bar_sub    <- object$U_bar[ids,ids]
+  B_sub        <- object$B[ids,ids]
   m_val        <- object$m
-  r_vec        <- (1+1/m_val)*B_sub / (U_bar_sub + (1+1/m_val)*B_sub)
-  r1           <- mean(r_vec, na.rm=TRUE)
-  T_tilde      <- diag((1+r1)*U_bar_sub)
-  k            <- length(found)
-  D1_stat      <- as.numeric(t(b_test)%*%MASS::ginv(T_tilde)%*%b_test)/k
-  t_val        <- k*(m_val-1)
-  nu1          <- if (t_val>4)
-    4 + (t_val-4)*(1+((1-2/t_val)/r1))^2
-  else Inf
+  #r_vec        <- (1+1/m_val)*B_sub / (U_bar_sub + (1+1/m_val)*B_sub)
+  
+  r1           <- (1 + 1/m_val)*sum(diag(B_sub*MASS::ginv(U_bar_sub)))/k #Average fraction of missing information
+                                                                    # Eqn 2.2 van Buuren (2018)
+  
+  T_tilde      <- (1+r1)*U_bar_sub #pg. 147 van Buuren (2018), Li et al. (1991)
+  D1_stat      <- as.numeric(t(b_test)%*%MASS::ginv(T_tilde)%*%b_test)/k #Eqn 5.3 van Buuren (2018)
+  t_val        <- k*(m_val-1) #eqn 5.4
+  if (t_val>4){
+    nu1 = 4 + (t_val-4)*(1+((1-2/t_val)/r1))^2 #Eqn 5.4
+  } else {
+    nu1 = .5*t_val*(1+1/k)*(1+1/r1)^2 #Eqn 5.4
+  }
+
   p_value      <- 1 - stats::pf(D1_stat, df1=k, df2=nu1)
   
   res <- list(
