@@ -1,93 +1,11 @@
 rm(list = ls())
 
-# if (!require("BiocManager", quietly = TRUE)) {install.packages("BiocManager")}
-# BiocManager::install("ggtree")
-
-
-# Skills Study
-# Creating Analytic Data Set
 
 library(tidyverse)
-library(lme4)
 library(lmtest)
-library(future)
-library(future.apply)
-library(doFuture)
-
-library(sjPlot)
-library(sjmisc)
-library(sjlabelled)
-library(mice)
-library(brms)
-
-library(glm2)
-
-
-library(marginaleffects)  # For predictions()
-library(MASS)             # For ginv()
-library(multiwayvcov)
-
-library(glmnet)
-
-library(caret)
-library(rpart)
-library(rpart.plot)
-library(ggtree)
-library(ape)
-library(ranger)
-
-# Convert rpart to phylo
-as.phylo.rpart <- function(tree) {
-  if (!inherits(tree, "rpart")) stop("Input must be an rpart object")
-  
-  # Get structure of the tree
-  frame <- tree$frame
-  nodes <- as.numeric(rownames(frame))
-  is_leaf <- frame$var == "<leaf>"
-  
-  # Assign labels to terminal nodes
-  tip_labels <- as.character(frame$yval[is_leaf])
-  names(tip_labels) <- nodes[is_leaf]
-  
-  # Build edge matrix
-  edges <- matrix(ncol = 2, nrow = 0)
-  for (i in nodes[!is_leaf]) {
-    left <- i * 2
-    right <- i * 2 + 1
-    edges <- rbind(edges, c(i, left), c(i, right))
-  }
-  
-  # Reindex nodes to match ape::phylo expectations
-  node_map <- setNames(seq_along(unique(as.vector(edges))), unique(as.vector(edges)))
-  edges_mapped <- apply(edges, 2, function(x) node_map[as.character(x)])
-  
-  # Create phylo object
-  library(ape)
-  phy <- list(
-    edge = matrix(edges_mapped, ncol = 2),
-    tip.label = tip_labels[as.character(nodes[is_leaf])],
-    Nnode = sum(!is_leaf)
-  )
-  class(phy) <- "phylo"
-  attr(phy, "rooted") <- TRUE  
-  
-  return(phy)
-}
-
-
-plan(strategy="multisession", workers = future::availableCores())
-options(future.globals.maxSize = 128 * 1024^3)
-
-# Cristian'S Windows
-#root_wd = "C:/Users/sarabiac"
-#onedrive_wd = file.path(root_wd, "OneDrive - The University of Colorado Denver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
-#github_wd = file.path(root_wd, "OneDrive - The University of Colorado Denver/College of Nursing/Repos/Windows Repo/Bowler-231464")
-
-# Cristian's Mac
-#root_wd = "/Users/cristiansarabia/Library/CloudStorage"
-#onedrive_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Skills Study/Bowler, Fara's files - March 2023_FB BH SH")
-#github_wd = file.path(root_wd, "OneDrive-TheUniversityofColoradoDenver/College of Nursing/Repos/Mac Repo/Bowler-231464")
-
+library(gt)
+library(emmeans)
+library(ggeffects)
 
 # Marcus W. Locations
 root_wd = "C:/Users/waldmanm/"
@@ -99,44 +17,46 @@ github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 #onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 #github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
-# CSPH-Biostats Cluster
-# root_wd = "/biostats_share/waldmanm"
-# onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
-# github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
-
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))
-source(file.path(github_wd, "Code", "utils", "glm2_multiway.R"))
 
-# Load in analytic dataset
-M = 50
-implist = demo_and_response_data(onedrive_wd = onedrive_wd, M = M) 
+
+dat = demo_and_response_data(onedrive_wd = onedrive_wd, M = 0)
+
 
 # Clean up the 
-implist =pbapply::pblapply(1:M, function(m){
   
-  dat_m = implist[[m+1]] %>% 
+  dat = dat%>% 
     dplyr::filter(round==1) %>% 
     dplyr::mutate(rid = 1:n()) %>% 
     dplyr::relocate(rid)
   
  
-  expertise_df = dat_m %>% 
+# Expertise
+  # Create dummy variables 
+  expertise_df = dat %>% 
     dplyr::select(rid, expertise) %>% 
     dplyr::filter(!is.na(expertise)) %>% 
     fastDummies::dummy_cols("expertise", split = ",", remove_first_dummy = T)
+  # Make sum contrast coding
+    ids = which(expertise_df$expertise == "Ambulatory Care")
+    expertise_df[ids,-(1:2)] = -1
+  # Join and drop dummy codes where there are not at least 5 variables
+  dat = dat %>% dplyr::left_join(expertise_df %>% dplyr::select(-expertise), by = "rid") %>% dplyr::select(-dplyr::any_of(dummies_to_drop(.,"expertise_")))
   
-  role_current_df = dat_m %>% 
+# Current role
+  role_current_df = dat %>% 
     dplyr::select(rid, role_current) %>% 
     dplyr::filter(!is.na(role_current)) %>% 
     fastDummies::dummy_cols("role_current", split = ",", remove_first_dummy = T)
+  # Make sum contrast coding
+    ids = which(role_current_df$role_current == "Clinical Educator/Practice")
+    role_current_df[ids,-(1:2)] = -1
+  # Join and drop dummy codes where there are not at least 5 variables
+  dat = dat %>% dplyr::left_join(role_current_df %>% dplyr::select(-role_current), by = "rid") %>% dplyr::select(-dplyr::any_of(dummies_to_drop(.,"role_current_")))
   
-  dat_m = dat_m %>% 
-    dplyr::left_join(expertise_df %>% dplyr::select(-expertise), by = "rid") %>% 
-    dplyr::left_join(role_current_df %>% dplyr::select(-role_current), by = "rid")
   
-  
-  names(dat_m) = names(dat_m) %>% 
+  names(dat) = names(dat) %>% 
     stringr::str_replace_all(" ", "_") %>% 
     stringr::str_replace_all("-", "_") %>% 
     stringr::str_replace_all("\\/", "_") %>% 
@@ -145,32 +65,298 @@ implist =pbapply::pblapply(1:M, function(m){
     stringr::str_remove_all("experience_") %>%
     stringr::str_remove_all("role_current_")
   
-  dat_m = dat_m %>% 
-    dplyr::select(imp, rid,name,varshort,essential,category,role_primary, gender, edu_years:Simulationist, dplyr::any_of(dplyr::starts_with("wgt"))) 
+  dat = dat %>% 
+    dplyr::select(rid,name,varshort,essential,category,role_primary, gender, edu_years:Simulationist) 
   
   #Let's get standardized estimates of the continuous variables
-  demo_dat = dat_m %>% 
+  demo_dat = dat %>% 
     dplyr::group_by(name) %>% 
     dplyr::reframe(edu_years = edu_years[1], rn_years = rn_years[1], age_years = age_years[1]) %>% 
-    dplyr::mutate(z_edu_years = (edu_years - mean(edu_years, na.rm = T))/sd(edu_years, na.rm = T) ) %>% 
-    dplyr::mutate(z_rn_years = (rn_years - mean(rn_years, na.rm = T))/sd(rn_years, na.rm = T) ) %>% 
-    dplyr::mutate(z_age_years = (age_years - mean(age_years, na.rm = T))/sd(age_years, na.rm = T) )
-   dat_m = dat_m %>% dplyr::left_join(demo_dat %>% dplyr::select(-(edu_years:age_years)), by = "name")
+    dplyr::mutate(edu_years_c = (edu_years - mean(edu_years, na.rm = T)) ) %>% 
+    dplyr::mutate(rn_years_c = (rn_years - mean(rn_years, na.rm = T)) ) %>% 
+    dplyr::mutate(age_years_c = (age_years - mean(age_years, na.rm = T)) )
+   dat = dat %>% dplyr::left_join(demo_dat %>% dplyr::select(-(edu_years:age_years)), by = "name")
     
   # Turn essential into a 0/1 variable
-  dat_m = dat_m %>% dplyr::mutate(essential = as.integer(essential=="Yes"))
+  dat = dat %>% dplyr::mutate(essential = as.integer(essential=="Yes"))
   
   # Set the reference category
-  dat_m$category = relevel(dat_m$category, ref = "Asepsis and Infection Control")
+  dat$category = relevel(dat$category, ref = "Asepsis and Infection Control")
+  dat$gender = relevel(dat$gender, ref = "Female")
+  dat$role_primary = relevel(dat$role_primary, ref = "Practice Clinical Expert")
   
-  return(dat_m)
-})
-skill_categories = unique(implist[[1]]$category) %>% as.character()
+  
+  #Lets apply sum contrasts
+  contrasts(dat$category) = "contr.sum"  
+  contrasts(dat$gender) = "contr.sum"
+  contrasts(dat$role_primary) = "contr.sum"
+  
+  
+# Function to fit models and perform LRT for covariates
+fit_covariate_models <- function(data) {
+  
+  # Initialize results list
+  covariate_results <- list()
+  
+  #--------------------------
+  # Primary Role
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,role_primary) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + role_primary, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*role_primary, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["role_primary"]] <- list(
+    label = "Primary Role",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1, 
+    model_2 = m2,
+    lrt = lrt,
+    notes = "General difference only"
+  )
+  
+  #--------------------------
+  # Gender
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,gender) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + gender, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*gender, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["gender"]] <- list(
+    label = "Gender",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1,
+    model_2 = m2,
+    lrt = lrt,
+    notes = "General difference only"
+  )
+  
+  #--------------------------
+  # Age
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,age_years) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + age_years, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*age_years, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["age_years"]] <- list(
+    label = "Age",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1,
+    model_2 = m2,
+    lrt = lrt,
+    notes = "General difference + interaction"
+  )
+  
+  #--------------------------
+  # Education
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,edu_years) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + edu_years, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*edu_years, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["edu_years"]] <- list(
+    label = "Education",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1,
+    model_2 = m2,
+    lrt = lrt,
+    notes = "None significant"
+  )
+  
+  #--------------------------
+  # Nursing Experience
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,rn_years) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + rn_years, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*rn_years, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["rn_years"]] <- list(
+    label = "Nursing Experience",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1,
+    model_2 = m2,
+    lrt = lrt,
+    notes = "Interactions and main effects significant"
+  )
+  
+  #--------------------------
+  # Expertise
+  #--------------------------
+  dat_k = data %>% dplyr::select(essential,category,Medical_Surgical:Pediatrics) %>% na.omit()
+  m0 = glm(essential~category, data = dat_k, family = "binomial")
+  m1 = glm(essential~category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics, data = dat_k, family = "binomial")
+  m2 = glm(essential~category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics, data = dat_k, family = "binomial")
+  lrt = lmtest::lrtest(m0,m1,m2)
+  
+  covariate_results[["expertise"]] <- list(
+    label = "Expertise",
+    data = dat_k,
+    model_0 = m0,
+    model_1 = m1,
+    model_2 = m2,
+    lrt = lrt,
+    notes = "None significant"
+  )
+  
+  return(covariate_results)
+}
+
+# Fit all covariate models
+covariate_fits <- fit_covariate_models(dat)
+
+# Load required packages for tables
 
 
+# Create likelihood ratio test results table
+create_lrt_table <- function(covariate_fits) {
+  
+  # Extract LRT results from fitted models
+  lrt_results <- list(
+    "Primary Role" = covariate_fits$role_primary$lrt,
+    "Gender" = covariate_fits$gender$lrt,
+    "Age" = covariate_fits$age_years$lrt,
+    "Education" = covariate_fits$edu_years$lrt,
+    "Nursing Experience" = covariate_fits$rn_years$lrt,
+    "Expertise" = covariate_fits$expertise$lrt
+  )
+  
+  # Extract results and create table
+  table_data <- data.frame(
+    Covariate = names(lrt_results),
+    M0_vs_M1_ChiSq = sapply(lrt_results, function(x) round(x$Chisq[2], 3)),
+    M0_vs_M1_df = sapply(lrt_results, function(x) x$Df[2]),
+    M0_vs_M1_p = sapply(lrt_results, function(x) {
+      p <- x$`Pr(>Chisq)`[2]
+      if (is.na(p)) return("--")
+      if (p < .001) return("< .001")
+      return(sprintf("%.3f", p))
+    }),
+    M1_vs_M2_ChiSq = sapply(lrt_results, function(x) round(x$Chisq[3], 3)),
+    M1_vs_M2_df = sapply(lrt_results, function(x) x$Df[3]),
+    M1_vs_M2_p = sapply(lrt_results, function(x) {
+      p <- x$`Pr(>Chisq)`[3]
+      if (is.na(p)) return("--")
+      if (p < .001) return("< .001")
+      return(sprintf("%.3f", p))
+    })
+  )
+  
+  # Create APA-formatted table using gt
+  gt_table <- table_data %>%
+    gt() %>%
+    tab_header(
+      title = "Likelihood Ratio Tests for Covariate Effects"
+    ) %>%
+    tab_spanner(
+      label = "Model 0 vs. Model 1 (Main Effect)",
+      columns = c(M0_vs_M1_ChiSq, M0_vs_M1_df, M0_vs_M1_p)
+    ) %>%
+    tab_spanner(
+      label = "Model 1 vs. Model 2 (Interaction Effect)",
+      columns = c(M1_vs_M2_ChiSq, M1_vs_M2_df, M1_vs_M2_p)
+    ) %>%
+    cols_label(
+      Covariate = "Covariate",
+      M0_vs_M1_ChiSq = html("&chi;<sup>2</sup>"),
+      M0_vs_M1_df = html("<em>df</em>"),
+      M0_vs_M1_p = html("<em>p</em>"),
+      M1_vs_M2_ChiSq = html("&chi;<sup>2</sup>"),
+      M1_vs_M2_df = html("<em>df</em>"),
+      M1_vs_M2_p = html("<em>p</em>")
+    ) %>%
+    tab_style(
+      style = cell_text(weight = "bold"),
+      locations = cells_column_labels()
+    ) %>%
+    tab_style(
+      style = cell_text(weight = "bold"),
+      locations = cells_title()
+    ) %>%
+    tab_options(
+      table.font.size = 12,
+      heading.title.font.size = 14,
+      column_labels.font.weight = "bold"
+    ) %>%
+    cols_align(
+      align = "center",
+      columns = c(M0_vs_M1_ChiSq, M0_vs_M1_df, M0_vs_M1_p, M1_vs_M2_ChiSq, M1_vs_M2_df, M1_vs_M2_p)
+    )
+  
+  return(gt_table)
+}
+
+# Create and display the table
+lrt_table <- create_lrt_table(covariate_fits)
+print(lrt_table)
 
 
+# Function to create main effects plot
+create_main_effects_plot <- function(covariate_fits, var) {
+  
+  # 1. Create list this_cov_list = covariate_fits[[var]]
+  this_cov_list <- covariate_fits[[var]]
+  if(is.null(this_cov_list)) {
+    stop(paste("Variable", var, "not found in covariate_fits"))
+  }
+  
+  # 2. Identify whether var is numeric or factor variable
+  var_cols <- names(this_cov_list$data)
+  covariate_col <- setdiff(var_cols, c("essential", "category"))
+  
+  if(length(covariate_col) > 1) {
+    # For expertise with multiple columns, treat as categorical
+    is_numeric <- FALSE
+  } else {
+    is_numeric <- is.numeric(this_cov_list$data[[covariate_col[1]]])
+  }
+  
+  # 3. Check if likelihood ratio test comparing model 1 to model 0 is significant
+  lrt_results <- this_cov_list$lrt
+  main_effect_sig <- lrt_results$`Pr(>Chisq)`[2] < 0.05
+  if(is.na(main_effect_sig)) main_effect_sig <- FALSE
+  
+  if(!main_effect_sig) {
+    return(NULL)
+  }
+  
+  # 4. Create coefficient table excluding category control variable
+  library(emmeans)
+  marg_means <- emmeans(
+    covariate_fits[[var]]$model_1, 
+    setdiff(all.vars(covariate_fits[[var]]$model_1$formula), c("essential", "category"))
+    )
+                                                                                                                  )])
+  
+  
+  coef_summary <- summary(this_cov_list$model_1)$coefficients
+  # Filter out category and intercept terms
+  non_category_rows <- !grepl("^category|^\\(Intercept\\)", rownames(coef_summary))
+  coef_summary <- coef_summary[non_category_rows, , drop = FALSE]
+  coef_df = data.frame(coef_summary)
+  
+  # 5. Calculate the reference category deviation
+  reference_category_deviation(coef_df$Estimate,)
+  
+  
+  # Return the coefficient table for now
+  return(coef_summary)
+}
 
+hi = create_effect_plots(covariate_fits, "expertise")
 
 
 

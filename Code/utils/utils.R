@@ -9,6 +9,26 @@
 
 # 
 
+dummies_to_drop<-function(df, prefix){
+  
+  vars_drop = df %>% dplyr::group_by(name) %>% dplyr::reframe(across(dplyr::starts_with(prefix), function(x)x[1])) %>% 
+    tidyr::pivot_longer(cols = dplyr::starts_with(prefix), names_to = "variable") %>% 
+    dplyr::filter(value==1) %>% 
+    dplyr::group_by(variable) %>% 
+    dplyr::summarise(n = n()) 
+    
+  
+  print(vars_drop %>% dplyr::arrange(n))
+  
+  vars_drop = vars_drop %>% dplyr::filter(n<5) %>%  purrr::pluck("variable")
+  
+  if(length(vars_drop) == 0){
+    as.character(vars_drop)
+  }
+  print(vars_drop)
+  vars_drop
+}
+
 get_mode <- function(x) {
   if (!is.factor(x) && !is.character(x)) {
     stop("Input must be a factor or character vector.")
