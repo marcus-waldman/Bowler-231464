@@ -6,20 +6,24 @@ library(lmtest)
 library(gt)
 library(emmeans)
 library(ggeffects)
+library(future)
+library(future.apply)
+
+future::plan(strategy = "multisession", workers =  8)
+
 
 # Marcus W. Locations
-root_wd = "C:/Users/waldmanm/"
-onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
-github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
-
-# Marcus's Home Desktop (White-Rhino) 
-#root_wd = "C:/Users/marcu"
+#root_wd = "C:/Users/waldmanm/"
 #onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 #github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
+# Marcus's Home Desktop (White-Rhino) 
+root_wd = "C:/Users/marcu"
+onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
+github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))
-
 
 dat = demo_and_response_data(onedrive_wd = onedrive_wd, M = 0)
 
@@ -92,22 +96,16 @@ dat = demo_and_response_data(onedrive_wd = onedrive_wd, M = 0)
   contrasts(dat$role_primary) = "contr.sum"
   
   
-# Function to fit models and perform LRT for covariates
-fit_covariate_models <- function(data) {
-  
-  # Initialize results list
-  covariate_results <- list()
-  
-  #--------------------------
-  # Primary Role
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,role_primary) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + role_primary, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*role_primary, data = dat_k, family = "binomial")
+# Helper functions to fit individual covariate models
+fit_role_primary_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,role_primary,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + role_primary + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*role_primary + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["role_primary"]] <- list(
+  return(list(
     label = "Primary Role",
     data = dat_k,
     model_0 = m0,
@@ -115,18 +113,18 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "General difference only"
-  )
-  
-  #--------------------------
-  # Gender
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,gender) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + gender, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*gender, data = dat_k, family = "binomial")
+  ))
+}
+
+fit_gender_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,gender,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + gender + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*gender + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["gender"]] <- list(
+  return(list(
     label = "Gender",
     data = dat_k,
     model_0 = m0,
@@ -134,18 +132,18 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "General difference only"
-  )
-  
-  #--------------------------
-  # Age
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,age_years) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + age_years, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*age_years, data = dat_k, family = "binomial")
+  ))
+}
+
+fit_age_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,age_years,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + age_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*age_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["age_years"]] <- list(
+  return(list(
     label = "Age",
     data = dat_k,
     model_0 = m0,
@@ -153,18 +151,18 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "General difference + interaction"
-  )
-  
-  #--------------------------
-  # Education
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,edu_years) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + edu_years, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*edu_years, data = dat_k, family = "binomial")
+  ))
+}
+
+fit_edu_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,edu_years,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + edu_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*edu_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["edu_years"]] <- list(
+  return(list(
     label = "Education",
     data = dat_k,
     model_0 = m0,
@@ -172,18 +170,18 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "None significant"
-  )
-  
-  #--------------------------
-  # Nursing Experience
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,rn_years) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + rn_years, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*rn_years, data = dat_k, family = "binomial")
+  ))
+}
+
+fit_rn_years_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,rn_years,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + rn_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*rn_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["rn_years"]] <- list(
+  return(list(
     label = "Nursing Experience",
     data = dat_k,
     model_0 = m0,
@@ -191,18 +189,18 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "Interactions and main effects significant"
-  )
-  
-  #--------------------------
-  # Expertise
-  #--------------------------
-  dat_k = data %>% dplyr::select(essential,category,Medical_Surgical:Pediatrics) %>% na.omit()
-  m0 = glm(essential~category, data = dat_k, family = "binomial")
-  m1 = glm(essential~category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics, data = dat_k, family = "binomial")
-  m2 = glm(essential~category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics, data = dat_k, family = "binomial")
+  ))
+}
+
+fit_expertise_models <- function(data) {
+  library(lme4)
+  dat_k = data %>% dplyr::select(essential,category,Medical_Surgical:Pediatrics,varshort,name) %>% na.omit()
+  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m1 = glmer(essential~category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
+  m2 = glmer(essential~category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
   lrt = lmtest::lrtest(m0,m1,m2)
   
-  covariate_results[["expertise"]] <- list(
+  return(list(
     label = "Expertise",
     data = dat_k,
     model_0 = m0,
@@ -210,13 +208,36 @@ fit_covariate_models <- function(data) {
     model_2 = m2,
     lrt = lrt,
     notes = "None significant"
+  ))
+}
+
+# Function to fit models and perform LRT for covariates using parallel processing
+fit_covariate_models <- function(data) {
+  
+  library(future.apply)
+  
+  # Define the list of model fitting functions
+  model_functions <- list(
+    role_primary = fit_role_primary_models,
+    gender = fit_gender_models,
+    age_years = fit_age_models,
+    edu_years = fit_edu_models,
+    rn_years = fit_rn_years_models,
+    expertise = fit_expertise_models
   )
+  
+  # Fit models in parallel
+  covariate_results <- future_lapply(model_functions, function(fit_func) {
+    fit_func(data)
+  }, future.seed = TRUE)
   
   return(covariate_results)
 }
 
 # Fit all covariate models
 covariate_fits <- fit_covariate_models(dat)
+
+write_rds(covariate_fits, file = file.path(onedrive_wd,"Data", "Model Fits", "model5_fits.rds"))
 
 # Load required packages for tables
 
