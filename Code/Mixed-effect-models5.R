@@ -13,17 +13,20 @@ future::plan(strategy = "multisession", workers =  8)
 
 
 # Marcus W. Locations
-#root_wd = "C:/Users/waldmanm/"
-#onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
-#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
-
-# Marcus's Home Desktop (White-Rhino) 
-root_wd = "C:/Users/marcu"
+root_wd = "C:/Users/waldmanm/"
 onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
 
+# Marcus's Home Desktop (White-Rhino) 
+#root_wd = "C:/Users/marcu"
+#onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
+#github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+
+setwd(github_wd)
 #source(file.path(github_wd, "Code", "participant_demographics_data.R"))
 source(file.path(github_wd, "Code", "utils", "utils.R"))
+source(file.path(github_wd, "Code", "utils", "glmm_models.R"))
+source(file.path(github_wd, "Code", "prob_helpers.R"))
 
 dat = demo_and_response_data(onedrive_wd = onedrive_wd, M = 0)
 
@@ -96,154 +99,89 @@ dat = demo_and_response_data(onedrive_wd = onedrive_wd, M = 0)
   contrasts(dat$role_primary) = "contr.sum"
   
   
-# Helper functions to fit individual covariate models
-fit_role_primary_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,role_primary,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + role_primary + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*role_primary + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Primary Role",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1, 
-    model_2 = m2,
-    lrt = lrt,
-    notes = "General difference only"
-  ))
-}
-
-fit_gender_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,gender,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + gender + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*gender + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Gender",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1,
-    model_2 = m2,
-    lrt = lrt,
-    notes = "General difference only"
-  ))
-}
-
-fit_age_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,age_years,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + age_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*age_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Age",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1,
-    model_2 = m2,
-    lrt = lrt,
-    notes = "General difference + interaction"
-  ))
-}
-
-fit_edu_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,edu_years,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + edu_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*edu_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Education",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1,
-    model_2 = m2,
-    lrt = lrt,
-    notes = "None significant"
-  ))
-}
-
-fit_rn_years_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,rn_years,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + rn_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*rn_years + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Nursing Experience",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1,
-    model_2 = m2,
-    lrt = lrt,
-    notes = "Interactions and main effects significant"
-  ))
-}
-
-fit_expertise_models <- function(data) {
-  library(lme4)
-  dat_k = data %>% dplyr::select(essential,category,Medical_Surgical:Pediatrics,varshort,name) %>% na.omit()
-  m0 = glmer(essential~category + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m1 = glmer(essential~category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  m2 = glmer(essential~category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics + (1|varshort) + (1|name), data = dat_k, family = binomial, verbose = 1, control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1E6)))
-  lrt = lmtest::lrtest(m0,m1,m2)
-  
-  return(list(
-    label = "Expertise",
-    data = dat_k,
-    model_0 = m0,
-    model_1 = m1,
-    model_2 = m2,
-    lrt = lrt,
-    notes = "None significant"
-  ))
-}
 
 # Function to fit models and perform LRT for covariates using parallel processing
-fit_covariate_models <- function(data) {
-  
-  library(future.apply)
-  
-  # Define the list of model fitting functions
-  model_functions <- list(
-    role_primary = fit_role_primary_models,
-    gender = fit_gender_models,
-    age_years = fit_age_models,
-    edu_years = fit_edu_models,
-    rn_years = fit_rn_years_models,
-    expertise = fit_expertise_models
-  )
-  
-  # Fit models in parallel
-  covariate_results <- future_lapply(model_functions, function(fit_func) {
-    fit_func(data)
-  }, future.seed = TRUE)
-  
-  return(covariate_results)
-}
 
 # Fit all covariate models
-covariate_fits <- fit_covariate_models(dat)
-
-write_rds(covariate_fits, file = file.path(onedrive_wd,"Data", "Model Fits", "model5_fits.rds"))
-
-# Load required packages for tables
-
+#covariate_fits <- fit_covariate_models(dat)
+#write_rds(covariate_fits, file = file.path(onedrive_wd,"Data", "Model Fits", "model5_fits.rds"), compress = "gz")
+  
+covariate_fits = readr::read_rds(file = file.path(onedrive_wd,"Data", "Model Fits", "model5_fits.rds"))
 
 # Create likelihood ratio test results table
-create_lrt_table <- function(covariate_fits) {
+create_lrt_table <- function(covariate_fits, correction_method = "BH") {
+  
+  # Check convergence of all models before proceeding
+  convergence_issues <- list()
+  
+  for(cov_name in names(covariate_fits)) {
+    cov_fit <- covariate_fits[[cov_name]]
+    
+    # Check convergence for each model (m0, m1, m2)
+    models <- list(m0 = cov_fit$model_0, m1 = cov_fit$model_1, m2 = cov_fit$model_2)
+    
+    for(model_name in names(models)) {
+      model <- models[[model_name]]
+      
+      # For glmer objects, check convergence
+      if(inherits(model, "glmerMod")) {
+        conv_code <- model@optinfo$conv$opt
+        if(conv_code != 0) {
+          convergence_issues[[paste0(cov_name, "_", model_name)]] <- paste0(
+            "Model ", model_name, " for ", cov_name, " did not converge (code: ", conv_code, ")"
+          )
+        }
+        
+        # Check for additional convergence warnings
+        if(length(model@optinfo$warnings) > 0) {
+          convergence_issues[[paste0(cov_name, "_", model_name, "_warn")]] <- paste0(
+            "Model ", model_name, " for ", cov_name, " has warnings: ", 
+            paste(model@optinfo$warnings, collapse = "; ")
+          )
+        }
+      }
+      
+      # For GLMMadaptive mixed_model objects, check convergence
+      if(inherits(model, "MixMod")) {
+        # Check convergence code from optimization
+        if(!is.null(model$opt) && model$opt$convergence != 0) {
+          convergence_issues[[paste0(cov_name, "_", model_name)]] <- paste0(
+            "Model ", model_name, " for ", cov_name, " did not converge (code: ", model$opt$convergence, ")"
+          )
+        }
+        
+        # Check for warnings or messages
+        if(!is.null(model$warnings) && length(model$warnings) > 0) {
+          convergence_issues[[paste0(cov_name, "_", model_name, "_warn")]] <- paste0(
+            "Model ", model_name, " for ", cov_name, " has warnings: ", 
+            paste(model$warnings, collapse = "; ")
+          )
+        }
+        
+        # Check if EM algorithm converged (if used)
+        if(!is.null(model$converged) && !model$converged) {
+          convergence_issues[[paste0(cov_name, "_", model_name, "_em")]] <- paste0(
+            "Model ", model_name, " for ", cov_name, " EM algorithm did not converge"
+          )
+        }
+      }
+    }
+  }
+  
+  # If there are convergence issues, prompt user
+  if(length(convergence_issues) > 0) {
+    cat("WARNING: Some models did not converge properly:\n")
+    for(issue in convergence_issues) {
+      cat("- ", issue, "\n")
+    }
+    cat("\nLikelihood ratio tests may not be reliable with non-converged models.\n")
+    response <- readline(prompt = "Do you want to continue with the LRT analysis despite these convergence issues? (y/n): ")
+    
+    if(tolower(trimws(response)) != "y") {
+      stop("Analysis stopped due to convergence concerns.")
+    }
+    cat("Proceeding with analysis (user accepted convergence risks)...\n\n")
+  }
   
   # Extract LRT results from fitted models
   lrt_results <- list(
@@ -255,32 +193,47 @@ create_lrt_table <- function(covariate_fits) {
     "Expertise" = covariate_fits$expertise$lrt
   )
   
+  # Extract raw p-values for both main effects and interactions
+  raw_p_main <- sapply(lrt_results, function(x) x$`Pr(>Chisq)`[2])
+  raw_p_interaction <- sapply(lrt_results, function(x) x$`Pr(>Chisq)`[3])
+  
+  # Apply multiple comparison correction to main effects (6 tests)
+  corrected_main <- raw_p_main
+  main_p_valid <- !is.na(raw_p_main)
+  if(sum(main_p_valid) > 0) {
+    corrected_main[main_p_valid] <- p.adjust(raw_p_main[main_p_valid], method = correction_method)
+  }
+  
+  # Apply multiple comparison correction to interaction effects (6 tests)
+  corrected_interaction <- raw_p_interaction
+  interaction_p_valid <- !is.na(raw_p_interaction)
+  if(sum(interaction_p_valid) > 0) {
+    corrected_interaction[interaction_p_valid] <- p.adjust(raw_p_interaction[interaction_p_valid], method = correction_method)
+  }
+  
+  # Format p-values - only show corrected values
+  format_p_corrected <- function(corrected_p) {
+    if (is.na(corrected_p)) return("--")
+    if (corrected_p < .001) return("< .001")
+    return(sprintf("%.3f", corrected_p))
+  }
+  
   # Extract results and create table
   table_data <- data.frame(
-    Covariate = names(lrt_results),
+    Expert_Characteristic = names(lrt_results),
     M0_vs_M1_ChiSq = sapply(lrt_results, function(x) round(x$Chisq[2], 3)),
     M0_vs_M1_df = sapply(lrt_results, function(x) x$Df[2]),
-    M0_vs_M1_p = sapply(lrt_results, function(x) {
-      p <- x$`Pr(>Chisq)`[2]
-      if (is.na(p)) return("--")
-      if (p < .001) return("< .001")
-      return(sprintf("%.3f", p))
-    }),
+    M0_vs_M1_p = sapply(corrected_main, format_p_corrected),
     M1_vs_M2_ChiSq = sapply(lrt_results, function(x) round(x$Chisq[3], 3)),
     M1_vs_M2_df = sapply(lrt_results, function(x) x$Df[3]),
-    M1_vs_M2_p = sapply(lrt_results, function(x) {
-      p <- x$`Pr(>Chisq)`[3]
-      if (is.na(p)) return("--")
-      if (p < .001) return("< .001")
-      return(sprintf("%.3f", p))
-    })
+    M1_vs_M2_p = sapply(corrected_interaction, format_p_corrected)
   )
   
   # Create APA-formatted table using gt
   gt_table <- table_data %>%
     gt() %>%
     tab_header(
-      title = "Likelihood Ratio Tests for Covariate Effects"
+      title = "Likelihood Ratio Tests for Expert Characteristic Effects"
     ) %>%
     tab_spanner(
       label = "Model 0 vs. Model 1 (Main Effect)",
@@ -291,13 +244,13 @@ create_lrt_table <- function(covariate_fits) {
       columns = c(M1_vs_M2_ChiSq, M1_vs_M2_df, M1_vs_M2_p)
     ) %>%
     cols_label(
-      Covariate = "Covariate",
+      Expert_Characteristic = "Expert Characteristic",
       M0_vs_M1_ChiSq = html("&chi;<sup>2</sup>"),
       M0_vs_M1_df = html("<em>df</em>"),
-      M0_vs_M1_p = html("<em>p</em>"),
+      M0_vs_M1_p = html("<em>p</em><sup>a</sup>"),
       M1_vs_M2_ChiSq = html("&chi;<sup>2</sup>"),
       M1_vs_M2_df = html("<em>df</em>"),
-      M1_vs_M2_p = html("<em>p</em>")
+      M1_vs_M2_p = html("<em>p</em><sup>a</sup>")
     ) %>%
     tab_style(
       style = cell_text(weight = "bold"),
@@ -315,6 +268,16 @@ create_lrt_table <- function(covariate_fits) {
     cols_align(
       align = "center",
       columns = c(M0_vs_M1_ChiSq, M0_vs_M1_df, M0_vs_M1_p, M1_vs_M2_ChiSq, M1_vs_M2_df, M1_vs_M2_p)
+    ) %>%
+    tab_footnote(
+      footnote = paste0("P-values adjusted for multiple comparisons using ", 
+                       switch(correction_method,
+                              "BH" = "Benjamini-Hochberg FDR correction",
+                              "bonferroni" = "Bonferroni correction",
+                              "holm" = "Holm-Bonferroni correction",
+                              paste0(correction_method, " correction")),
+                       " (6 comparisons for main effects, 6 comparisons for interaction effects)."),
+      locations = cells_column_labels(columns = c(M0_vs_M1_p, M1_vs_M2_p))
     )
   
   return(gt_table)
@@ -325,62 +288,341 @@ lrt_table <- create_lrt_table(covariate_fits)
 print(lrt_table)
 
 
-# Function to create main effects plot
-create_main_effects_plot <- function(covariate_fits, var) {
+# Create regression coefficient tables for significant effects
+create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
   
-  # 1. Create list this_cov_list = covariate_fits[[var]]
-  this_cov_list <- covariate_fits[[var]]
-  if(is.null(this_cov_list)) {
-    stop(paste("Variable", var, "not found in covariate_fits"))
+  # Debug: Let's reconstruct p-values directly from covariate_fits instead of parsing gt table
+  lrt_results <- list(
+    "Primary Role" = covariate_fits$role_primary$lrt,
+    "Gender" = covariate_fits$gender$lrt,
+    "Age" = covariate_fits$age_years$lrt,
+    "Education" = covariate_fits$edu_years$lrt,
+    "Nursing Experience" = covariate_fits$rn_years$lrt,
+    "Expertise" = covariate_fits$expertise$lrt
+  )
+  
+  # Extract raw p-values for both main effects and interactions
+  raw_p_main <- sapply(lrt_results, function(x) x$`Pr(>Chisq)`[2])
+  raw_p_interaction <- sapply(lrt_results, function(x) x$`Pr(>Chisq)`[3])
+  
+  # Apply multiple comparison correction (same as in create_lrt_table)
+  corrected_main <- raw_p_main
+  main_p_valid <- !is.na(raw_p_main)
+  if(sum(main_p_valid) > 0) {
+    corrected_main[main_p_valid] <- p.adjust(raw_p_main[main_p_valid], method = "BH")
   }
   
-  # 2. Identify whether var is numeric or factor variable
-  var_cols <- names(this_cov_list$data)
-  covariate_col <- setdiff(var_cols, c("essential", "category"))
-  
-  if(length(covariate_col) > 1) {
-    # For expertise with multiple columns, treat as categorical
-    is_numeric <- FALSE
-  } else {
-    is_numeric <- is.numeric(this_cov_list$data[[covariate_col[1]]])
+  corrected_interaction <- raw_p_interaction
+  interaction_p_valid <- !is.na(raw_p_interaction)
+  if(sum(interaction_p_valid) > 0) {
+    corrected_interaction[interaction_p_valid] <- p.adjust(raw_p_interaction[interaction_p_valid], method = "BH")
   }
   
-  # 3. Check if likelihood ratio test comparing model 1 to model 0 is significant
-  lrt_results <- this_cov_list$lrt
-  main_effect_sig <- lrt_results$`Pr(>Chisq)`[2] < 0.05
-  if(is.na(main_effect_sig)) main_effect_sig <- FALSE
+  # Map display names back to covariate_fits names
+  covariate_name_map <- c(
+    "Primary Role" = "role_primary",
+    "Gender" = "gender", 
+    "Age" = "age_years",
+    "Education" = "edu_years",
+    "Nursing Experience" = "rn_years",
+    "Expertise" = "expertise"
+  )
   
-  if(!main_effect_sig) {
-    return(NULL)
-  }
+  # Initialize output list
+  regression_tables <- list()
   
-  # 4. Create coefficient table excluding category control variable
-  library(emmeans)
-  marg_means <- emmeans(
-    covariate_fits[[var]]$model_1, 
-    setdiff(all.vars(covariate_fits[[var]]$model_1$formula), c("essential", "category"))
+  # Function to create coefficient table - manual approach for GLMMadaptive compatibility
+  create_coef_table <- function(model, title) {
+    library(sjPlot)
+    library(gt)
+    
+    cat("\n=== DEBUG: Creating table for", title, "===\n")
+    
+    # Debug: Check the model formula to see what we're working with
+    cat("Model formula:", deparse(model$call$fixed), "\n")
+    
+    # Extract coefficient summary from GLMMadaptive model
+    model_summary <- summary(model)
+    cat("Model summary names:", names(model_summary), "\n")
+    
+    # Get the coefficient table - GLMMadaptive uses different structure
+    if("coef_table" %in% names(model_summary)) {
+      coef_table <- model_summary$coef_table
+      cat("Using coef_table\n")
+    } else if("tTable" %in% names(model_summary)) {
+      coef_table <- model_summary$tTable
+      cat("Using tTable\n")
+    } else if("coefficients" %in% names(model_summary)) {
+      coef_table <- model_summary$coefficients  
+      cat("Using coefficients\n")
+    } else {
+      cat("No recognizable coefficient table found\n")
+      cat("Available names:", names(model_summary), "\n")
+      return(NULL)
+    }
+    
+    cat("Coefficient table structure:\n")
+    print(str(coef_table))
+    cat("Row names:", rownames(coef_table), "\n")
+    cat("Column names:", colnames(coef_table), "\n")
+    
+    # Check if we have the expected columns
+    expected_cols <- c("Estimate", "Std.Err", "z-value", "p-value")
+    available_cols <- colnames(coef_table)
+    cat("Expected columns:", expected_cols, "\n")
+    cat("Available columns:", available_cols, "\n")
+    
+    # Try to match columns flexibly
+    estimate_col <- which(grepl("Estimate|estimate", available_cols))[1]
+    se_col <- which(grepl("Std.Err|SE|se", available_cols))[1]
+    z_col <- which(grepl("z-value|z.value|t-value|t.value", available_cols))[1]
+    p_col <- which(grepl("p-value|p.value|Pr", available_cols))[1]
+    
+    cat("Column indices - Estimate:", estimate_col, "SE:", se_col, "z:", z_col, "p:", p_col, "\n")
+    
+    if(any(is.na(c(estimate_col, se_col, z_col, p_col)))) {
+      cat("Missing required columns\n")
+      return(NULL)
+    }
+    
+    # Convert to data frame
+    coef_df <- data.frame(
+      Term = rownames(coef_table),
+      Estimate = coef_table[, estimate_col],
+      SE = coef_table[, se_col], 
+      z_value = coef_table[, z_col],
+      p_value = coef_table[, p_col],
+      stringsAsFactors = FALSE
     )
-                                                                                                                  )])
+    
+    cat("Before filtering - Terms:", coef_df$Term, "\n")
+    
+    # For interaction models, we want to show interaction terms
+    if(grepl("Interaction Model", title)) {
+      # For interaction models, keep interaction terms (contains :) but remove main category effects
+      # Remove main category effects (start with "category" but don't contain ":")
+      # Keep everything else including interactions (contain ":")
+      coef_df <- coef_df[!(grepl("^category", coef_df$Term) & !grepl(":", coef_df$Term)), ]
+      cat("Interaction model - keeping interaction terms and main expertise effects\n")
+    } else {
+      # For main effect models, filter out all category terms
+      coef_df <- coef_df[!grepl("^category", coef_df$Term), ]
+      cat("Main effect model - removing all category terms\n")
+    }
+    
+    cat("After filtering - Terms:", coef_df$Term, "\n")
+    cat("Final row count:", nrow(coef_df), "\n")
+    
+    if(nrow(coef_df) == 0) {
+      cat("No rows remaining after filtering\n")
+      return(NULL)
+    }
+    
+    # Keep original term names (we'll clean up prefixes later)
+    coef_df$Term_clean <- coef_df$Term
+    
+    # Add significance stars to estimates
+    coef_df$stars <- sapply(coef_df$p_value, function(p) {
+      if(is.na(p)) return("")
+      if(p < 0.001) return("***")
+      if(p < 0.01) return("**")
+      if(p < 0.05) return("*")
+      return("")
+    })
+    
+    # Combine estimate with stars
+    coef_df$Est_with_stars <- paste0(sprintf("%.3f", coef_df$Estimate), 
+                                     ifelse(coef_df$stars != "", 
+                                            paste0("<sup>", coef_df$stars, "</sup>"), 
+                                            ""))
+    
+    # Format p-values (unadjusted)
+    coef_df$p_formatted <- sapply(coef_df$p_value, function(p) {
+      if(is.na(p)) return("")
+      if(p < 0.001) return("< 0.001")
+      return(sprintf("%.3f", p))
+    })
+    
+    # Create professional table using gt
+    gt_table <- coef_df %>%
+      dplyr::select(Term_clean, Est_with_stars, SE, z_value, p_formatted) %>%
+      gt() %>%
+      tab_header(title = title) %>%
+      cols_label(
+        Term_clean = "Predictor",
+        Est_with_stars = html("<em>Est</em>"),
+        SE = html("SE"),
+        z_value = html("<em>z</em>"),
+        p_formatted = html("<em>p</em>")
+      ) %>%
+      fmt_number(
+        columns = c(SE, z_value),
+        decimals = 3
+      ) %>%
+      tab_style(
+        style = cell_text(weight = "bold"),
+        locations = cells_column_labels()
+      ) %>%
+      tab_style(
+        style = cell_text(weight = "bold"), 
+        locations = cells_title()
+      ) %>%
+      cols_align(
+        align = "left",
+        columns = Term_clean
+      ) %>%
+      cols_align(
+        align = "center", 
+        columns = c(Est_with_stars, SE, z_value, p_formatted)
+      ) %>%
+      tab_options(
+        table.font.size = 12,
+        heading.title.font.size = 14
+      ) %>%
+      tab_footnote(
+        footnote = "* p < 0.05, ** p < 0.01, *** p < 0.001. P-values are unadjusted. Category main effects omitted from table.",
+        locations = cells_column_labels(columns = Est_with_stars)
+      )
+    
+    return(gt_table)
+  }
   
+  # Loop through each expert characteristic using the corrected p-values
+  for(char_display in names(lrt_results)) {
+    char_name <- covariate_name_map[char_display]
+    
+    if(is.na(char_name)) next
+    
+    # Get corrected p-values
+    main_p <- corrected_main[char_display]
+    interaction_p <- corrected_interaction[char_display]
+    
+    # Debug output
+    cat("Checking", char_display, "- Main p:", main_p, "Interaction p:", interaction_p, "\n")
+    
+    # Check if main effect is significant
+    if(!is.na(main_p) && main_p <= alpha) {
+      cat("Creating main effect table for", char_display, "\n")
+      main_title <- paste0("Main Effect Model: ", char_display)
+      main_table <- create_coef_table(covariate_fits[[char_name]]$model_1, main_title)
+      
+      if(!is.null(main_table)) {
+        regression_tables[[paste0(char_name, "_main")]] <- main_table
+      }
+    }
+    
+    # Check if interaction effect is significant
+    if(!is.na(interaction_p) && interaction_p <= alpha) {
+      cat("Creating interaction table for", char_display, "\n")
+      interaction_title <- paste0("Interaction Model: ", char_display, " × Category")
+      interaction_table <- create_coef_table(covariate_fits[[char_name]]$model_2, interaction_title)
+      
+      if(!is.null(interaction_table)) {
+        regression_tables[[paste0(char_name, "_interaction")]] <- interaction_table
+      }
+    }
+  }
   
-  coef_summary <- summary(this_cov_list$model_1)$coefficients
-  # Filter out category and intercept terms
-  non_category_rows <- !grepl("^category|^\\(Intercept\\)", rownames(coef_summary))
-  coef_summary <- coef_summary[non_category_rows, , drop = FALSE]
-  coef_df = data.frame(coef_summary)
-  
-  # 5. Calculate the reference category deviation
-  reference_category_deviation(coef_df$Estimate,)
-  
-  
-  # Return the coefficient table for now
-  return(coef_summary)
+  return(regression_tables)
 }
 
-hi = create_effect_plots(covariate_fits, "expertise")
+
+# Create and display regression tables for significant effects
+regression_tables <- create_regression_tables(lrt_table, covariate_fits)
+
+# Display each table
+for(i in seq_along(regression_tables)) {
+  cat("\n", names(regression_tables)[i], ":\n")
+  print(regression_tables[[i]])
+}
 
 
+source("Code/prob_helpers.R")
 
+test_main_effect_prob_est(covariate_fits, "role_primary")
+test_interactive_effects_prob_est(covariate_fits, var = "expertise")
+
+
+main_effect_role_primary_df = main_effect_prob_est(covariate_fits, "role_primary")
+
+interactive_effects_expertise_df = interactive_effects_prob_est(covariate_fits, var = "expertise")
+agg_interactive_effects_expertise_df = interactive_effects_expertise_df %>% 
+  dplyr::group_by(category) %>% 
+  dplyr::reframe(mu = plogis(mean(qlogis(prob)))) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(category = as.character(category))
+interactive_effects_expertise_df = interactive_effects_expertise_df %>% 
+  dplyr::left_join(agg_interactive_effects_expertise_df, by = "category") %>% 
+  dplyr::mutate(significant = (mu<ci_lb | mu > ci_ub)) %>% 
+  dplyr::filter(significant) %>% 
+  dplyr::mutate(category = as.character(category))
+
+# Filter aggregated data to only include significant categories
+agg_interactive_effects_expertise_df_filtered = agg_interactive_effects_expertise_df %>%
+  dplyr::filter(category %in% unique(interactive_effects_expertise_df$category))
+
+ggplot() + 
+  geom_errorbarh(data = interactive_effects_expertise_df, aes(x = prob, y = covariate_level, xmin = ci_lb, xmax = ci_ub)) + 
+  geom_vline(data = agg_interactive_effects_expertise_df_filtered, aes(xintercept = mu)) + 
+  facet_grid(category~., scales = "free_y")
+# test_interactive_effects_prob_est(covariate_fits, var = "role_primary")  
+# test_interactive_effects_prob_est(covariate_fits, var = "age_years")
+#sink()
+
+# 
+# # Function to create main effects plot
+# create_main_effects_plot <- function(covariate_fits, var) {
+#   
+#   # 1. Create list this_cov_list = covariate_fits[[var]]
+#   this_cov_list <- covariate_fits[[var]]
+#   if(is.null(this_cov_list)) {
+#     stop(paste("Variable", var, "not found in covariate_fits"))
+#   }
+#   
+#   # 2. Identify whether var is numeric or factor variable
+#   var_cols <- names(this_cov_list$data)
+#   covariate_col <- setdiff(var_cols, c("essential", "category"))
+#   
+#   if(length(covariate_col) > 1) {
+#     # For expertise with multiple columns, treat as categorical
+#     is_numeric <- FALSE
+#   } else {
+#     is_numeric <- is.numeric(this_cov_list$data[[covariate_col[1]]])
+#   }
+#   
+#   # 3. Check if likelihood ratio test comparing model 1 to model 0 is significant
+#   lrt_results <- this_cov_list$lrt
+#   main_effect_sig <- lrt_results$`Pr(>Chisq)`[2] < 0.05
+#   if(is.na(main_effect_sig)) main_effect_sig <- FALSE
+#   
+#   if(!main_effect_sig) {
+#     return(NULL)
+#   }
+#   
+#   # 4. Create coefficient table excluding category control variable
+#   library(emmeans)
+#   marg_means <- emmeans(
+#     covariate_fits[[var]]$model_1, 
+#     setdiff(all.vars(covariate_fits[[var]]$model_1$formula), c("essential", "category"))
+#     )
+#                                                                                                                 
+#   
+#   
+#   coef_summary <- summary(this_cov_list$model_1)$coefficients
+#   # Filter out category and intercept terms
+#   non_category_rows <- !grepl("^category|^\\(Intercept\\)", rownames(coef_summary))
+#   coef_summary <- coef_summary[non_category_rows, , drop = FALSE]
+#   coef_df = data.frame(coef_summary)
+#   
+#   # 5. Calculate the reference category deviation
+#   reference_category_deviation(coef_df$Estimate,)
+#   
+#   
+#   # Return the coefficient table for now
+#   return(coef_summary)
+# }
+# 
+# hi = create_effect_plots(covariate_fits, "expertise")
 ###
 # # Baseline Model
 # baseline <- list(formula = essential~category, wald.variables = "category", fit = NULL, D1 = NULL)
