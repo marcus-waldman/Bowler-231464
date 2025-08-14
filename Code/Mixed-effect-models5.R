@@ -8,6 +8,8 @@ library(emmeans)
 library(ggeffects)
 library(future)
 library(future.apply)
+library(ggtext)
+library(patchwork)
 
 future::plan(strategy = "multisession", workers =  8)
 
@@ -16,6 +18,9 @@ future::plan(strategy = "multisession", workers =  8)
 root_wd = "C:/Users/waldmanm/"
 onedrive_wd = file.path(root_wd,"OneDrive - The University of Colorado Denver", "Bowler, Fara's files - March 2023_FB BH SH")
 github_wd = file.path(root_wd,"git-repositories", "Bowler-231464")
+tables_wd = file.path(onedrive_wd, "Publications", "tables", "R")
+figures_wd = file.path(onedrive_wd, "Publications", "figures", "R")
+
 
 # Marcus's Home Desktop (White-Rhino) 
 #root_wd = "C:/Users/marcu"
@@ -232,9 +237,6 @@ create_lrt_table <- function(covariate_fits, correction_method = "BH") {
   # Create APA-formatted table using gt
   gt_table <- table_data %>%
     gt() %>%
-    tab_header(
-      title = "Likelihood Ratio Tests for Expert Characteristic Effects"
-    ) %>%
     tab_spanner(
       label = "Model 0 vs. Model 1 (Main Effect)",
       columns = c(M0_vs_M1_ChiSq, M0_vs_M1_df, M0_vs_M1_p)
@@ -263,7 +265,8 @@ create_lrt_table <- function(covariate_fits, correction_method = "BH") {
     tab_options(
       table.font.size = 12,
       heading.title.font.size = 14,
-      column_labels.font.weight = "bold"
+      column_labels.font.weight = "bold",
+      table.font.names = "Times New Roman"
     ) %>%
     cols_align(
       align = "center",
@@ -275,8 +278,7 @@ create_lrt_table <- function(covariate_fits, correction_method = "BH") {
                               "BH" = "Benjamini-Hochberg FDR correction",
                               "bonferroni" = "Bonferroni correction",
                               "holm" = "Holm-Bonferroni correction",
-                              paste0(correction_method, " correction")),
-                       " (6 comparisons for main effects, 6 comparisons for interaction effects)."),
+                              paste0(correction_method, " correction"))),
       locations = cells_column_labels(columns = c(M0_vs_M1_p, M1_vs_M2_p))
     )
   
@@ -286,6 +288,8 @@ create_lrt_table <- function(covariate_fits, correction_method = "BH") {
 # Create and display the table
 lrt_table <- create_lrt_table(covariate_fits)
 print(lrt_table)
+
+lrt_table %>% gtsave(filename = file.path(tables_wd, "lrt_table.html"))
 
 
 # Create regression coefficient tables for significant effects
@@ -397,18 +401,8 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
     
     cat("Before filtering - Terms:", coef_df$Term, "\n")
     
-    # For interaction models, we want to show interaction terms
-    if(grepl("Interaction Model", title)) {
-      # For interaction models, keep interaction terms (contains :) but remove main category effects
-      # Remove main category effects (start with "category" but don't contain ":")
-      # Keep everything else including interactions (contain ":")
-      coef_df <- coef_df[!(grepl("^category", coef_df$Term) & !grepl(":", coef_df$Term)), ]
-      cat("Interaction model - keeping interaction terms and main expertise effects\n")
-    } else {
-      # For main effect models, filter out all category terms
-      coef_df <- coef_df[!grepl("^category", coef_df$Term), ]
-      cat("Main effect model - removing all category terms\n")
-    }
+    # Keep all terms including category main effects
+    cat("Keeping all terms including category main effects\n")
     
     cat("After filtering - Terms:", coef_df$Term, "\n")
     cat("Final row count:", nrow(coef_df), "\n")
@@ -418,8 +412,27 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
       return(NULL)
     }
     
-    # Keep original term names (we'll clean up prefixes later)
+    # Clean up term names by removing variable prefixes
     coef_df$Term_clean <- coef_df$Term
+    
+    # Remove common variable prefixes
+    coef_df$Term_clean <- gsub("^role_primary", "", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("^gender", "", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("^age_years_c", "Age (centered)", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("^edu_years_c", "Education Years (centered)", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("^rn_years_c", "Nursing Years (centered)", coef_df$Term_clean)
+    
+    # Clean up interaction terms
+    coef_df$Term_clean <- gsub("role_primary", "", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("gender", "", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub("^category", "", coef_df$Term_clean)
+    coef_df$Term_clean <- gsub(":", " × ", coef_df$Term_clean)
+    
+    # Replace underscores with spaces for expertise and role variables
+    coef_df$Term_clean <- gsub("_", " ", coef_df$Term_clean)
+    
+    # Remove any leading/trailing whitespace or special characters
+    coef_df$Term_clean <- trimws(coef_df$Term_clean)
     
     # Add significance stars to estimates
     coef_df$stars <- sapply(coef_df$p_value, function(p) {
@@ -431,10 +444,7 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
     })
     
     # Combine estimate with stars
-    coef_df$Est_with_stars <- paste0(sprintf("%.3f", coef_df$Estimate), 
-                                     ifelse(coef_df$stars != "", 
-                                            paste0("<sup>", coef_df$stars, "</sup>"), 
-                                            ""))
+    coef_df$Est_with_stars <- paste0(sprintf("%.3f", coef_df$Estimate), coef_df$stars)
     
     # Format p-values (unadjusted)
     coef_df$p_formatted <- sapply(coef_df$p_value, function(p) {
@@ -447,7 +457,6 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
     gt_table <- coef_df %>%
       dplyr::select(Term_clean, Est_with_stars, SE, z_value, p_formatted) %>%
       gt() %>%
-      tab_header(title = title) %>%
       cols_label(
         Term_clean = "Predictor",
         Est_with_stars = html("<em>Est</em>"),
@@ -477,10 +486,11 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
       ) %>%
       tab_options(
         table.font.size = 12,
-        heading.title.font.size = 14
+        heading.title.font.size = 14,
+        table.font.names = "Times New Roman"
       ) %>%
       tab_footnote(
-        footnote = "* p < 0.05, ** p < 0.01, *** p < 0.001. P-values are unadjusted. Category main effects omitted from table.",
+        footnote = "* p < 0.05, ** p < 0.01, *** p < 0.001. P-values are unadjusted.",
         locations = cells_column_labels(columns = Est_with_stars)
       )
     
@@ -529,22 +539,79 @@ create_regression_tables <- function(lrt_table, covariate_fits, alpha = 0.05) {
 
 # Create and display regression tables for significant effects
 regression_tables <- create_regression_tables(lrt_table, covariate_fits)
+regression_tables[[1]] %>%  gtsave(filename = file.path(tables_wd, "role_primary_main_effect_coefficients.html"))
+regression_tables[[2]] %>%  gtsave(filename = file.path(tables_wd, "expertise_coefficients.html"))
 
-# Display each table
-for(i in seq_along(regression_tables)) {
-  cat("\n", names(regression_tables)[i], ":\n")
-  print(regression_tables[[i]])
+
+source("Code/table_plot_helpers.R")
+
+
+# Create model comparison tables for each characteristic
+characteristics <- names(covariate_fits)
+
+# Define table references and titles for each characteristic
+table_info <- list(
+  role_primary = list(
+    reference = "Supplementary Table 1",
+    title = "Primary Role: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  ),
+  gender = list(
+    reference = "Supplementary Table 2", 
+    title = "Gender: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  ),
+  age_years = list(
+    reference = "Supplementary Table 3",
+    title = "Age: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  ),
+  edu_years = list(
+    reference = "Supplementary Table 4",
+    title = "Education Years: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  ),
+  rn_years = list(
+    reference = "Supplementary Table 5",
+    title = "Nursing Experience: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  ),
+  expertise = list(
+    reference = "Supplementary Table 6",
+    title = "Expertise: Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models."
+  )
+)
+
+# Loop through each characteristic and create tables
+for(char in characteristics) {
+  cat("Creating table for:", char, "\n")
+  
+  # Get table info or use defaults
+  if(char %in% names(table_info)) {
+    ref <- table_info[[char]]$reference
+    title <- table_info[[char]]$title
+  } else {
+    ref <- paste("Supplementary Table", which(characteristics == char))
+    title <- paste0(stringr::str_to_title(gsub("_", " ", char)), 
+                   ": Baseline (Model 1), Main Effects (Model 2), and Interactions (Model 3) Models.")
+  }
+  
+  # Create the table
+  comparison_table <- create_model_comparison_table(
+    covariate_fits, 
+    characteristic = char, 
+    table_reference = ref,
+    table_title = title
+  )
+  
+  # Save the table
+  filename <- paste0(char, "_model_building.html")
+  gtsave(comparison_table, filename = file.path(tables_wd, "model-building", filename))
+  
+  cat("Saved table for", char, "as", filename, "\n")
 }
 
 
-source("Code/prob_helpers.R")
 
+source("Code/prob_helpers.R")
 test_main_effect_prob_est(covariate_fits, "role_primary")
 test_interactive_effects_prob_est(covariate_fits, var = "expertise")
-
-
 main_effect_role_primary_df = main_effect_prob_est(covariate_fits, "role_primary")
-
 interactive_effects_expertise_df = interactive_effects_prob_est(covariate_fits, var = "expertise")
 agg_interactive_effects_expertise_df = interactive_effects_expertise_df %>% 
   dplyr::group_by(category) %>% 
@@ -553,306 +620,175 @@ agg_interactive_effects_expertise_df = interactive_effects_expertise_df %>%
   dplyr::mutate(category = as.character(category))
 interactive_effects_expertise_df = interactive_effects_expertise_df %>% 
   dplyr::left_join(agg_interactive_effects_expertise_df, by = "category") %>% 
-  dplyr::mutate(significant = (mu<ci_lb | mu > ci_ub)) %>% 
-  dplyr::filter(significant) %>% 
-  dplyr::mutate(category = as.character(category))
+  dplyr::mutate(category = as.character(category)) %>%
+  dplyr::mutate(category_clean = gsub("^category", "", category)) %>% 
+  dplyr::filter(p_value < .05)
 
 # Filter aggregated data to only include significant categories
 agg_interactive_effects_expertise_df_filtered = agg_interactive_effects_expertise_df %>%
-  dplyr::filter(category %in% unique(interactive_effects_expertise_df$category))
+  dplyr::filter(category %in% unique(interactive_effects_expertise_df$category)) %>%
+  dplyr::mutate(category_clean = gsub("^category", "", category))
 
-ggplot() + 
-  geom_errorbarh(data = interactive_effects_expertise_df, aes(x = prob, y = covariate_level, xmin = ci_lb, xmax = ci_ub)) + 
-  geom_vline(data = agg_interactive_effects_expertise_df_filtered, aes(xintercept = mu)) + 
-  facet_grid(category~., scales = "free_y")
-# test_interactive_effects_prob_est(covariate_fits, var = "role_primary")  
-# test_interactive_effects_prob_est(covariate_fits, var = "age_years")
-#sink()
+# Prepare data for bar plot including grand mean
+plot_data <- interactive_effects_expertise_df %>%
+  dplyr::select(category_clean, covariate_level, prob, ci_lb, ci_ub) %>%
+  dplyr::mutate(
+    covariate_level = gsub("_", " ", covariate_level),  # Replace underscores with spaces
+    bar_type = "Expertise Level"
+  )
 
-# 
-# # Function to create main effects plot
-# create_main_effects_plot <- function(covariate_fits, var) {
-#   
-#   # 1. Create list this_cov_list = covariate_fits[[var]]
-#   this_cov_list <- covariate_fits[[var]]
-#   if(is.null(this_cov_list)) {
-#     stop(paste("Variable", var, "not found in covariate_fits"))
-#   }
-#   
-#   # 2. Identify whether var is numeric or factor variable
-#   var_cols <- names(this_cov_list$data)
-#   covariate_col <- setdiff(var_cols, c("essential", "category"))
-#   
-#   if(length(covariate_col) > 1) {
-#     # For expertise with multiple columns, treat as categorical
-#     is_numeric <- FALSE
-#   } else {
-#     is_numeric <- is.numeric(this_cov_list$data[[covariate_col[1]]])
-#   }
-#   
-#   # 3. Check if likelihood ratio test comparing model 1 to model 0 is significant
-#   lrt_results <- this_cov_list$lrt
-#   main_effect_sig <- lrt_results$`Pr(>Chisq)`[2] < 0.05
-#   if(is.na(main_effect_sig)) main_effect_sig <- FALSE
-#   
-#   if(!main_effect_sig) {
-#     return(NULL)
-#   }
-#   
-#   # 4. Create coefficient table excluding category control variable
-#   library(emmeans)
-#   marg_means <- emmeans(
-#     covariate_fits[[var]]$model_1, 
-#     setdiff(all.vars(covariate_fits[[var]]$model_1$formula), c("essential", "category"))
-#     )
-#                                                                                                                 
-#   
-#   
-#   coef_summary <- summary(this_cov_list$model_1)$coefficients
-#   # Filter out category and intercept terms
-#   non_category_rows <- !grepl("^category|^\\(Intercept\\)", rownames(coef_summary))
-#   coef_summary <- coef_summary[non_category_rows, , drop = FALSE]
-#   coef_df = data.frame(coef_summary)
-#   
-#   # 5. Calculate the reference category deviation
-#   reference_category_deviation(coef_df$Estimate,)
-#   
-#   
-#   # Return the coefficient table for now
-#   return(coef_summary)
-# }
-# 
-# hi = create_effect_plots(covariate_fits, "expertise")
-###
-# # Baseline Model
-# baseline <- list(formula = essential~category, wald.variables = "category", fit = NULL, D1 = NULL)
-# baseline$fit = pool_glm2_multiway(formula = essential ~ category, imputed_list = implist, cluster_vars = "name")
-# baseline$D1 = Wald(baseline$fit, terms = "category")
-# 
-# 
-# # Main Effects Models
-# K = length(skill_categories)
-# main_effects <-  list(
-#   role_primary = list( formula = essential~category+role_primary, wald.comparison = NULL, fit = NULL, D1 = NULL),
-#   gender = list( formula = essential~category+gender, wald.comparison = NULL, fit = NULL, D1 = NULL),
-#   age_years = list( formula = essential~category+age_years, wald.comparison = NULL, fit = NULL, D1 = NULL),
-#   edu_years = list( formula = essential~category+edu_years, wald.comparison = NULL, fit = NULL, D1 = NULL),
-#   rn_years = list( formula = essential ~ category+rn_years, wald.comparison = NULL, fit = NULL, D1 = NULL),
-#   expertise = list( formula = essential ~ category + Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics,
-#                     wald.comparison = baseline$formula,
-#                     fit = NULL,
-#                     D1 = NULL),
-#   role_current = list( formula = essential ~ category + New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-#                        wald.comparison = baseline$formula,
-#                        fit = NULL,
-#                        D1 = NULL)
-# )
-# P = length(main_effects)
-# covariates = names(main_effects)
-# for(p in 1:P){
-#   fit_kj = pool_glm2_multiway(formula =  main_effects[[covariates[p]]]$formula,
-#                               imputed_list = implist,
-#                               cluster_vars = c("name"))
-#   main_effects[[covariates[p]]]$fit = fit_kj
-#   if( !is.null(main_effects[[covariates[p]]]$wald.comparison) ){
-#     wald.terms = setdiff( attr(terms( main_effects[[covariates[p]]]$formula), "term.labels"), attr(terms( baseline$formula), "term.labels"))
-#     main_effects[[covariates[p]]]$D1 = Wald(fit_kj, terms = wald.terms)
-#   }
-# }
-# 
-# 
-# #Create a one-way interactions template template
-# one_way_interactions <-  list(
-#   role_primary = list( formula = essential~category*role_primary, wald.comparison = main_effects[["role_primary"]]$formula, fit = NULL),
-#   gender = list( formula = essential~category*gender, wald.comparison = main_effects[["gender"]]$formula, fit = NULL),
-#   age_years = list( formula = essential~category*age_years, wald.comparison = main_effects[["age_years"]]$formula, fit = NULL),
-#   edu_years = list( formula = essential~category*edu_years, wald.comparison = main_effects[["edu_years"]]$formula, fit = NULL),
-#   rn_years = list( formula = essential ~ category*rn_years, wald.comparison = main_effects[["rn_years"]]$formula, fit = NULL),
-#   expertise = list( formula = essential ~ category*Medical_Surgical + category*Population_Health + category*Behavioral_Health + category*Critical_Care + category*ED + category*Perioperative + category*OB + category*Pediatrics,
-#                     wald.comparison =  main_effects[["expertise"]]$formula,
-#                     fit = NULL),
-#   role_current = list( formula = essential ~ category*New_Grad_Res_Coord_Educator + category*Clinical_Instructor_Academic + category*Preceptor + category*Simulationist,
-#                        wald.comparison = main_effects[["role_current"]]$formula,
-#                        fit = NULL)
-# )
-# for(p in 1:P){
-#   fit_kj = pool_glm2_multiway(formula =  one_way_interactions[[covariates[p]]]$formula,
-#                               imputed_list = implist,
-#                               cluster_vars = c("name"))
-#   one_way_interactions[[covariates[p]]]$fit = fit_kj
-#   if( !is.null(one_way_interactions[[covariates[p]]]$wald.comparison) ){
-#     wald.terms = setdiff(fit_kj$results$Term, main_effects[[covariates[[p]]]]$fit$results$Term)
-#     one_way_interactions[[covariates[p]]]$D1 = Wald(fit_kj, terms = wald.terms)
-#   }
-# }
-# 
-# 
-# wald_notes<-function(wald){
-#   if(is.null(wald)){return("p=N/A")}
-#   return(paste0("p=", ifelse(wald$p.value<.001, "<.001", signif(wald$p.value,3))))
-# }
-# 
-# wd_current = getwd()
-# setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
-# for(p in 1:P){
-#   pvals = paste0("Model 2 vs. Model 1: ", wald_notes(main_effects[[p]]$D1),"; Model 3 vs. Model 2: ", wald_notes(one_way_interactions[[p]]$D1))
-#   tab_model(
-#     baseline$fit, main_effects[[p]]$fit, one_way_interactions[[p]]$fit,
-#     #rm.terms = paste0("category [", unique(implist[[1]]$category), "]"),
-#     dv.labels = paste0("Model ", 1:3),
-#     title = paste0(toupper(covariates[p]),"<br>", "Wald tests: ",pvals),
-#     file = paste0(covariates[p],"-coefficients-table.html")
-#   )
-# }
+# Add grand mean data as separate bars
+grand_mean_data <- agg_interactive_effects_expertise_df_filtered %>%
+  dplyr::select(category_clean, mu) %>%
+  dplyr::mutate(
+    covariate_level = "Mean",
+    prob = mu,
+    ci_lb = mu,  # No error bars for grand mean
+    ci_ub = mu,
+    bar_type = "Grand Mean"
+  ) %>%
+  dplyr::select(category_clean, covariate_level, prob, ci_lb, ci_ub, bar_type)
 
+# Combine the data
+combined_plot_data <- dplyr::bind_rows(plot_data, grand_mean_data)
 
-# age_years
+# Reorder factor levels to put Mean first
+combined_plot_data$covariate_level <- factor(
+  combined_plot_data$covariate_level,
+  levels = c("Mean", sort(unique(plot_data$covariate_level)))
+)
+
+# Create custom labels with bold formatting for "Mean"
+level_labels <- levels(combined_plot_data$covariate_level)
+bold_labels <- ifelse(level_labels == "Mean", "**Overall**", level_labels)
+
+plot_interact = 
+  ggplot(combined_plot_data, aes(x = covariate_level, y = prob, fill = bar_type)) + 
+  geom_col(alpha = 0.7) +
+  # geom_errorbar(
+  #   data = combined_plot_data[combined_plot_data$bar_type == "Expertise Level", ],
+  #   aes(ymin = ci_lb, ymax = ci_ub), 
+  #   width = 0.25,
+  #   color = "grey50"
+  # ) +
+  geom_text(
+    data = combined_plot_data[combined_plot_data$bar_type == "Expertise Level", ],
+    aes(label = gsub("^0\\.", ".", sprintf("%.2f", prob))),
+    vjust = 1.2,
+    size = 3,
+    family = "Times New Roman",
+    fontface = "bold",
+    color = "black"
+  ) +
+  geom_text(
+    data = combined_plot_data[combined_plot_data$bar_type == "Grand Mean", ],
+    aes(label = gsub("^0\\.", ".", sprintf("%.2f", prob))),
+    vjust = 1.2,
+    size = 3,
+    family = "Times New Roman",
+    fontface = "bold",
+    color = "white"
+  ) +
+  facet_wrap(~ category_clean, scales = "free_x") +
+  scale_x_discrete(drop = FALSE, labels = bold_labels) +
+  scale_fill_manual(
+    values = c("Expertise Level" = "steelblue", "Grand Mean" = "black"),
+    guide = "none"
+  ) +
+  labs(
+    x = element_blank(),
+    y = element_blank(),
+    title = "Expertise-by-Skill Category Interactions*",
+    caption = "*Only significant interaction terms shown in chart"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Times New Roman"),
+    axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1, family = "Times New Roman"),
+    axis.title.x = element_text(family = "Times New Roman"),
+    axis.title.y = element_text(family = "Times New Roman"),
+    strip.text = element_text(size = 10, face = "bold", family = "Times New Roman"),
+    plot.title = element_text(family = "Times New Roman", hjust = 0),
+    plot.subtitle = element_text(family = "Times New Roman"),
+    plot.caption = element_text(family = "Times New Roman"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
+  ) + 
+  geom_hline(yintercept = 0, size = 1, col = "grey50")
+
+plot_interact
+
+ggsave(plot_interact, filename = file.path(figures_wd, "skill-endorsement-probabilities.png"), height = 5.5, width = 5.5, bg = "white")
 
 
 
-### CART
-# longimp = implist %>% dplyr::bind_rows() %>%
-#   dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name") %>%
-#   dplyr::mutate(essential = ifelse(essential==1,"Yes","No") %>% as.factor)
-# #
-# # Create custom folds using the foldid column
-# registerDoFuture()
-#
-# K=length(skill_categories)
-# for(k in 1:K){
-#   longimp_k = longimp %>% dplyr::filter(category == skill_categories[k]) %>% dplyr::mutate(id= 1:n())
-#   grid_k = expand.grid(fid = unique(longimp_k$fid), varshort =  unique(longimp_k$varshort))
-#   folds_k <- lapply(1:nrow(grid_k),
-#                     function(x){longimp_k %>% dplyr::filter(fid==grid_k$fid[x], varshort == grid_k$varshort[x]) %>% purrr::pluck("id")}
-#                   )
-#   names(folds_k) <- paste0("Fold", 1:nrow(grid_k))
-#
-#   # Set up caret training using parallel CV
-#   train_control_k <- trainControl(
-#     method = "cv",
-#     number = length(folds_k),
-#     indexOut = folds_k,
-#     allowParallel = TRUE
-#   )
-#
-#   # Train the CART model
-#   set.seed(456)
-#   cart_model_k <- caret::train(
-#     essential~role_primary+gender+age_years+edu_years+rn_years +
-#       Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
-#       New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-#     data = longimp_k,
-#     method = "rpart",
-#     trControl = train_control_k,
-#     tuneLength = 10
-#   )
-#
-#   setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
-#   pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
-#   rpart.plot(cart_model_k$finalModel, type = 4, fallen.leaves = F, extra = "auto")
-#   dev.off()
-#
-# }
 
+# Main effects plot for role_primary
+# Prepare data for main effects bar plot
+main_plot_data <- main_effect_role_primary_df %>%
+  dplyr::mutate(
+    level = gsub("_", " ", level),  # Replace underscores with spaces
+    bar_type = "Role Level"
+  )
 
+# Create custom labels with bold formatting for reference level
+main_level_labels <- unique(main_plot_data$level)
+main_bold_labels <- ifelse(main_level_labels == "Clinical Educator/Practice", "**Clinical Educator/Practice**", main_level_labels)
 
-### RF: Variable importance 
-longimp = implist %>% dplyr::bind_rows() %>%
-  dplyr::left_join(implist[[1]] %>% dplyr::group_by(name) %>% dplyr::summarise() %>%  dplyr::mutate(fid = 1:n()), by = "name") %>%
-  dplyr::mutate(essential = ifelse(essential==1,"Yes","No") %>% as.factor)
-#
-# Create custom folds using the foldid column
-#registerDoFuture()
+plot_main_effects = 
+  ggplot(main_plot_data, aes(x = prob, y = level)) + 
+  geom_col(alpha = 0.7, fill = "steelblue") +
+  geom_errorbarh(
+    aes(xmin = ci_lb, xmax = ci_ub), 
+    height = 0.25,
+    color = "grey50"
+  ) +
+  geom_text(
+    aes(label = gsub("^0\\.", ".", sprintf("%.2f", prob))),
+    hjust = 1.2,
+    size = 3,
+    family = "Times New Roman",
+    fontface = "bold",
+    color = "black"
+  ) +
+  scale_y_discrete(labels = main_bold_labels) +
+  labs(
+    x = element_blank(),
+    y = element_blank(),
+    subtitle = "Primary Role Main Effects"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Times New Roman"),
+    axis.text.y = ggtext::element_markdown(family = "Times New Roman"),
+    axis.title.x = element_text(family = "Times New Roman"),
+    axis.title.y = element_text(family = "Times New Roman"),
+    plot.title = element_text(family = "Times New Roman", hjust = 0),
+    plot.subtitle = element_text(family = "Times New Roman"),
+    plot.caption = element_text(family = "Times New Roman"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
+  ) +
+  geom_vline(xintercept = 0, size = 2, col = "grey50") +
+  coord_cartesian(expand = FALSE)
 
-K=length(skill_categories)
-importance_df = pbapply::pblapply(1:K, function(k){
-  
-  set.seed(2025)
-  longimp_k = longimp %>% dplyr::filter(category == skill_categories[k]) %>% dplyr::mutate(id= 1:n())
-  
-  
-  fits = future.apply::future_lapply(1:M, function(m){
-    fit_ranger = ranger::ranger(
-      formula = essential~role_primary+gender+age_years+edu_years+rn_years +
-        Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
-        New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-      data = longimp_k %>% dplyr::filter(imp==m),
-      probability = T, 
-      importance = "permutation")
-    
-    return(fit_ranger)
-  }, future.seed = 2025)
+plot_main_effects
 
-  
-  imp_df = lapply(1:M, function(m){
-    vi=importance(fits[[m]])
-    imp_df = data.frame(Overall = vi, Variable = names(vi)) %>% dplyr::arrange(desc(Overall)) %>% dplyr::mutate(category = skill_categories[k], .imp = m)
-    return(imp_df)
-  }) %>% dplyr::bind_rows() %>% 
-  dplyr::group_by(Variable) %>% 
-  dplyr::reframe(Overall = mean(Overall)) %>% 
-  dplyr::mutate(category = skill_categories[k])
-  
-  
-  return(imp_df)
-  
-  # grid_k = expand.grid(fid = unique(longimp_k$fid), varshort =  unique(longimp_k$varshort))
-  # folds_k <- lapply(1:nrow(grid_k),
-  #                   function(x){longimp_k %>% dplyr::filter(fid==grid_k$fid[x], varshort == grid_k$varshort[x]) %>% purrr::pluck("id")}
-  #                 )
-  # names(folds_k) <- paste0("Fold", 1:nrow(grid_k))
-  # 
-  # # Set up caret training using parallel CV
-  # train_control_k <- trainControl(
-  #   method = "cv",
-  #   number = length(folds_k),
-  #   indexOut = folds_k,
-  #   allowParallel = TRUE, 
-  #   classProbs = T, 
-  #   summaryFunction = twoClassSummary,
-  #   savePredictions = "final"
-  # )
-  # 
-  # # Train the CART model
-  # set.seed(456)
-  # rf_model_k <- caret::train(
-  #   essential~role_primary+gender+age_years+edu_years+rn_years +
-  #     Medical_Surgical + Population_Health + Behavioral_Health + Critical_Care + ED + Perioperative + OB + Pediatrics +
-  #     New_Grad_Res_Coord_Educator + Clinical_Instructor_Academic + Preceptor + Simulationist,
-  #   data = longimp_k,
-  #   method = "ranger",
-  #   metric = "ROC",
-  #   trControl = train_control_k,
-  #   tuneLength = 10, 
-  #   importance = "impurity"
-  # )
+ggsave(plot_main_effects, filename = file.path(figures_wd, "primary-role-main-effects.png"), height = 4, width = 6, bg = "white")
 
-  #setwd(file.path(onedrive_wd, "Meeting Memos", "2025-06-11 Follow-up"))
-  #pdf(file = paste0("CART-",stringr::str_replace_all(skill_categories[k],"\\/", "-"),".pdf"), width = 14, height = 10)
-  #part.plot(cart_model_k$finalModel, type = 4, fallen.leaves = F, extra = "auto")
-  #dev.off()
+# Create combined plot with plot_main_effects on top (1/3) and plot_interact on bottom (2/3)
+plot_combined <- plot_main_effects / plot_interact + 
+  plot_layout(heights = c(1, 2)) &
+  theme(plot.margin = margin(2, 2, 2, 2, "pt"))
 
-}) %>% dplyr::bind_rows()
+plot_combined
 
+ggsave(plot_combined, filename = file.path(figures_wd, "combined-effects-plot.png"), height = 8, width = 8, bg = "white")
 
-pdf(file = "Relative Variable Importance.pdf", height = 11, width = 8.5)
-for(k in 1:K){
-  importance_k = importance_df %>% 
-    dplyr::filter(category == skill_categories[k]) %>% 
-    dplyr::mutate(Overall = Overall/(max(Overall)-min(Overall))) %>% 
-    dplyr::mutate(Overall = Overall - min(Overall)) %>% 
-    dplyr::mutate(Demographic_Variable = plyr::mapvalues(Variable, from = Variable, to = 1:n()) %>% ordered(levels = 1:n(), labels = Variable)  )
-  
-  
-  plt_k = ggplot(importance_k, aes(x = Demographic_Variable, y = Overall, fill = Overall)) + 
-    geom_bar(stat = "identity", show.legend = F) +
-    theme_blank() +
-    labs(y = "Variable Importance (Relative)", title = skill_categories[k]) +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-    scale_fill_gradient(low = "black", high = "royalblue") 
-  
-  
-  print(plt_k)
-}
-dev.off()
 

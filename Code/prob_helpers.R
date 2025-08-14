@@ -349,6 +349,47 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
   # Get interaction model (model_2) for calculations
   model <- this_cov_list$model_2
   
+  # Extract coefficient table to get p-values for interaction terms
+  model_summary <- summary(model)
+  if("coef_table" %in% names(model_summary)) {
+    coef_table <- model_summary$coef_table
+  } else if("tTable" %in% names(model_summary)) {
+    coef_table <- model_summary$tTable
+  } else if("coefficients" %in% names(model_summary)) {
+    coef_table <- model_summary$coefficients
+  } else {
+    stop("Could not find coefficient table in model summary")
+  }
+  
+  # Find coefficient, standard error, and p-value columns
+  estimate_col <- which(grepl("Estimate|estimate", colnames(coef_table)))[1]
+  se_col <- which(grepl("Std.Err|SE|se", colnames(coef_table)))[1]
+  p_col <- which(grepl("p-value|p.value|Pr", colnames(coef_table)))[1]
+  
+  if(is.na(estimate_col)) {
+    stop("Could not find coefficient estimate column in coefficient table")
+  }
+  if(is.na(se_col)) {
+    stop("Could not find standard error column in coefficient table")
+  }
+  if(is.na(p_col)) {
+    stop("Could not find p-value column in coefficient table")
+  }
+  
+  # Create lookup tables for interaction terms
+  interaction_pvalues <- list()
+  interaction_coefficients <- list()
+  interaction_ses <- list()
+  coef_names <- rownames(coef_table)
+  
+  # Extract interaction term statistics (terms containing ":")
+  interaction_terms <- coef_names[grepl(":", coef_names)]
+  for(term in interaction_terms) {
+    interaction_pvalues[[term]] <- coef_table[term, p_col]
+    interaction_coefficients[[term]] <- coef_table[term, estimate_col]
+    interaction_ses[[term]] <- coef_table[term, se_col]
+  }
+  
   # Handle special cases for expertise and role_current (manually dummy-coded variables)
   if(var == "expertise") {
     # For expertise, only use the dummy variables (exclude reference "Ambulatory Care")
@@ -397,6 +438,11 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
     prob = NA,
     ci_lb = NA,
     ci_ub = NA,
+    coefficient = NA,
+    se = NA,
+    p_value = NA,
+    coef_ci_lb = NA,  # CI for interaction coefficient
+    coef_ci_ub = NA,  # CI for interaction coefficient
     stringsAsFactors = FALSE
   )
   
@@ -421,6 +467,11 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
       prob = NA,
       ci_lb = NA,
       ci_ub = NA,
+      coefficient = NA,
+      se = NA,
+      p_value = NA,
+      coef_ci_lb = NA,
+      coef_ci_ub = NA,
       stringsAsFactors = FALSE
     )
     result_df <- rbind(result_df, reference_df)
@@ -438,6 +489,11 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
       prob = NA,
       ci_lb = NA,
       ci_ub = NA,
+      coefficient = NA,
+      se = NA,
+      p_value = NA,
+      coef_ci_lb = NA,
+      coef_ci_ub = NA,
       stringsAsFactors = FALSE
     )
     result_df <- rbind(result_df, reference_df)
@@ -464,6 +520,9 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
           prob = NA,
           ci_lb = NA,
           ci_ub = NA,
+          coefficient = NA,
+          se = NA,
+          p_value = NA,
           stringsAsFactors = FALSE
         )
         result_df <- rbind(result_df, reference_df)
@@ -477,6 +536,8 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
     
     # Check if this is a reference category that needs special handling
     is_reference <- FALSE
+    
+    # Check for reference covariate level (Ambulatory Care for expertise, etc.)
     if(var == "expertise" && result_df$covariate_level[i] == "Ambulatory Care") {
       is_reference <- TRUE
     } else if(var == "role_current" && result_df$covariate_level[i] == "Clinical Educator/Practice") {
@@ -491,10 +552,18 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
       }
     }
     
+    # Also check for reference category (e.g., "Asepsis and Infection Control")
+    category_coeff_name <- paste0("category", result_df$category[i])
+    is_reference_category <- !(category_coeff_name %in% names(beta))
+    
+    # If it's a reference category, it also needs special handling
+    if(is_reference_category) {
+      is_reference <- TRUE
+    }
+    
     if(is_reference) {
       # Use helper function for reference categories
-      category_coeff_name <- paste0("category", result_df$category[i])
-      is_reference_category <- !(category_coeff_name %in% names(beta))
+      # is_reference_category already calculated above
       
       pred_data <- create_reference_pred_data(
         category = result_df$category[i], 
@@ -519,6 +588,124 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
         pred_data[[covariate_col]] <- factor(reference_level, levels = all_levels)
       }
       
+      # Calculate reference category interaction coefficient and statistics using sum contrasts
+      if(var %in% c("expertise", "role_current")) {
+        
+        # Initialize variables
+        ref_coefficient <- NA
+        contrast_vector <- NULL
+        
+        # Handle two types of reference combinations:
+        # 1. Reference category (e.g., "Asepsis and Infection Control") with any expertise level
+        # 2. Any category with reference expertise level (e.g., "Ambulatory Care")
+        
+        if(is_reference_category) {
+          # Case 1: Reference category with any expertise level
+          # For reference category, interaction coefficient = -sum(corresponding interactions for other categories)
+          covariate_level <- result_df$covariate_level[i]
+          
+          if(covariate_level == "Ambulatory Care") {
+            # Reference category × Reference expertise = sum of all OTHER interaction coefficients
+            # This is the double reference case - coefficient should be calculated differently
+            all_interaction_coeffs <- beta[interaction_terms]
+            ref_coefficient <- -sum(all_interaction_coeffs)
+            
+            # For variance calculation, use all interaction terms
+            contrast_vector <- rep(0, length(beta))
+            names(contrast_vector) <- names(beta)
+            contrast_vector[interaction_terms] <- -1
+            
+          } else if(covariate_level %in% covariate_cols) {
+            # Reference category × Non-reference expertise
+            # Find all interaction terms with this expertise level across other categories
+            interaction_terms_for_expertise <- c()
+            
+            for(cat_name in setdiff(category_levels, result_df$category[i])) {
+              term1 <- paste0("category", cat_name, ":", covariate_level)
+              term2 <- paste0(covariate_level, ":category", cat_name)
+              
+              if(term1 %in% names(beta)) {
+                interaction_terms_for_expertise <- c(interaction_terms_for_expertise, term1)
+              } else if(term2 %in% names(beta)) {
+                interaction_terms_for_expertise <- c(interaction_terms_for_expertise, term2)
+              }
+            }
+            
+            if(length(interaction_terms_for_expertise) > 0) {
+              ref_coef_values <- beta[interaction_terms_for_expertise]
+              ref_coefficient <- -sum(ref_coef_values)
+              
+              # Calculate standard error using contrast vector
+              contrast_vector <- rep(0, length(beta))
+              names(contrast_vector) <- names(beta)
+              contrast_vector[interaction_terms_for_expertise] <- -1
+            } else {
+              ref_coefficient <- NA
+              contrast_vector <- NULL
+            }
+          } else {
+            # This shouldn't happen, but handle gracefully
+            ref_coefficient <- NA
+            contrast_vector <- NULL
+          }
+          
+        } else if(result_df$covariate_level[i] == "Ambulatory Care") {
+          # Case 2: Non-reference category with reference expertise level
+          category_name <- gsub("^category", "", result_df$category[i])
+          
+          # Find all interaction terms for this category with non-reference expertise levels
+          interaction_terms_for_category <- c()
+          
+          for(cov_level in covariate_cols) {
+            term1 <- paste0("category", category_name, ":", cov_level)
+            term2 <- paste0(cov_level, ":category", category_name)
+            
+            if(term1 %in% names(beta)) {
+              interaction_terms_for_category <- c(interaction_terms_for_category, term1)
+            } else if(term2 %in% names(beta)) {
+              interaction_terms_for_category <- c(interaction_terms_for_category, term2)
+            }
+          }
+          
+          if(length(interaction_terms_for_category) > 0) {
+            ref_coef_values <- beta[interaction_terms_for_category]
+            ref_coefficient <- -sum(ref_coef_values)
+            
+            # Calculate standard error using contrast vector
+            contrast_vector <- rep(0, length(beta))
+            names(contrast_vector) <- names(beta)
+            contrast_vector[interaction_terms_for_category] <- -1
+          } else {
+            ref_coefficient <- NA
+            contrast_vector <- NULL
+          }
+        }
+        
+        # Calculate standard error and p-value if we have a valid coefficient
+        if(!is.na(ref_coefficient) && !is.null(contrast_vector)) {
+          # Get variance-covariance matrix for the relevant coefficients
+          vcov_matrix <- vcov_beta
+          ref_variance <- as.numeric(t(contrast_vector) %*% vcov_matrix %*% contrast_vector)
+          ref_se <- sqrt(ref_variance)
+          
+          # Calculate p-value using z-test
+          if(ref_se > 0) {
+            z_stat <- ref_coefficient / ref_se
+            ref_pvalue <- 2 * (1 - pnorm(abs(z_stat)))
+          } else {
+            ref_pvalue <- NA
+          }
+          
+          # Store the calculated statistics
+          result_df$coefficient[i] <- ref_coefficient
+          result_df$se[i] <- ref_se
+          result_df$p_value[i] <- ref_pvalue
+          # Calculate 95% CI for interaction coefficient
+          result_df$coef_ci_lb[i] <- ref_coefficient - 1.96 * ref_se
+          result_df$coef_ci_ub[i] <- ref_coefficient + 1.96 * ref_se
+        }
+      }
+      
     } else {
       # Use helper function for non-reference categories
       pred_data <- create_nonreference_pred_data(
@@ -538,6 +725,55 @@ interactive_effects_prob_est <- function(covariate_fits, var) {
     result_df$prob[i] <- estimates$prob
     result_df$ci_lb[i] <- estimates$ci_lb
     result_df$ci_ub[i] <- estimates$ci_ub
+    
+    # Find and assign the corresponding p-value for interaction terms
+    if(!is_reference) {
+      # Generate the interaction term name based on the combination
+      category_term <- if(result_df$category[i] %in% c("Fundamental")) {
+        # Reference category doesn't appear in coefficient names
+        NULL
+      } else {
+        paste0("category", result_df$category[i])
+      }
+      
+      covariate_term <- if(var %in% c("expertise", "role_current")) {
+        result_df$covariate_level[i]
+      } else if(length(covariate_cols) == 1) {
+        covariate_col <- covariate_cols[1]
+        covariate_data <- model_data[[covariate_col]]
+        if(is.factor(covariate_data) || is.character(covariate_data)) {
+          paste0(covariate_col, result_df$covariate_level[i])
+        } else {
+          # For continuous variables, p-value is the same for all levels
+          covariate_col
+        }
+      } else {
+        result_df$covariate_level[i]
+      }
+      
+      # Construct interaction term name
+      if(!is.null(category_term) && !is.null(covariate_term)) {
+        # Try both possible orders of interaction term
+        interaction_term1 <- paste0(category_term, ":", covariate_term)
+        interaction_term2 <- paste0(covariate_term, ":", category_term)
+        
+        if(interaction_term1 %in% names(interaction_pvalues)) {
+          result_df$coefficient[i] <- interaction_coefficients[[interaction_term1]]
+          result_df$se[i] <- interaction_ses[[interaction_term1]]
+          result_df$p_value[i] <- interaction_pvalues[[interaction_term1]]
+          # Calculate 95% CI for interaction coefficient
+          result_df$coef_ci_lb[i] <- result_df$coefficient[i] - 1.96 * result_df$se[i]
+          result_df$coef_ci_ub[i] <- result_df$coefficient[i] + 1.96 * result_df$se[i]
+        } else if(interaction_term2 %in% names(interaction_pvalues)) {
+          result_df$coefficient[i] <- interaction_coefficients[[interaction_term2]]
+          result_df$se[i] <- interaction_ses[[interaction_term2]]
+          result_df$p_value[i] <- interaction_pvalues[[interaction_term2]]
+          # Calculate 95% CI for interaction coefficient
+          result_df$coef_ci_lb[i] <- result_df$coefficient[i] - 1.96 * result_df$se[i]
+          result_df$coef_ci_ub[i] <- result_df$coefficient[i] + 1.96 * result_df$se[i]
+        }
+      }
+    }
   }
   
   return(result_df)
