@@ -127,7 +127,7 @@ fit_glmer<-function(formula, implist, nAGQ = 1,...){
   
 }
 
-demo_and_response_data<-function(onedrive_wd, M = 0){
+demo_and_response_data<-function(onedrive_wd, M = 0, clean_gender = T){
    
    experience_edu_map = data.frame(
      labels = c("2-5 years", "6 -10 years", "11 – 15 years", "16 – 20 years",  "21 – 25 years", "26 – 30 years"),
@@ -184,15 +184,20 @@ demo_and_response_data<-function(onedrive_wd, M = 0){
       age = plyr::mapvalues(age, from = age_map$labels, to = age_map$values) %>% 
         ordered(levels = age_map$values, labels = age_map$labels)
     ) %>% 
-   # Clean up gender
-   dplyr::mutate(
-     gender = ifelse(startsWith(gender,"Prefer"), NA, gender)
-   ) %>% 
    dplyr::select(-`Level of Program(s)`) %>% 
    dplyr::mutate(across(where(is.character), factor)) %>% 
    dplyr::left_join(experience_edu_years, by = "experience_edu" ) %>% 
    dplyr::left_join(experience_rn_years, by = "experience_rn") %>% 
    dplyr::left_join(age_years, by = "age")
+   
+   
+   if(clean_gender){
+     demo_data = demo_data %>% 
+       # Clean up gender
+       dplyr::mutate(
+         gender = ifelse(startsWith(as.character(gender),"Prefer"), NA, gender)
+       )
+   }
    
    
    # Impute the demographics data
